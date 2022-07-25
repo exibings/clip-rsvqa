@@ -1,5 +1,0 @@
-numpy
-matplotlib
-Pillow
-torch
-transformers==4.17
