@@ -1,6 +1,5 @@
 import os
 
-
 print("Verifying RSVQA-LR images...")
 print("\tall original images?", True if len(os.listdir(os.path.join("datasets", "RSVQA-LR", "images"))) == 772+1 else False)
 print("\tall resized images?", True if len(os.listdir(os.path.join(

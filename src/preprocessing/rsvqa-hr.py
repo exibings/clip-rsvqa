@@ -1,7 +1,6 @@
-
 import os
+
 import datasets
-from PIL import Image
 
 hrDataset = datasets.load_dataset("csv", data_files={"train": os.path.join("datasets", "RSVQA-HR", "traindf.csv"), 
                                                          "test": os.path.join("datasets", "RSVQA-Hr", "testdf.csv"), 

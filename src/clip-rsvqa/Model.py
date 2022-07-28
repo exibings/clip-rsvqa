@@ -1,25 +1,16 @@
-import numpy as np
 import torch
-import torch.optim as optim
 from torch.nn import CrossEntropyLoss
-from transformers import BertConfig, ViTConfig
-from transformers import CLIPProcessor, CLIPTokenizer, CLIPModel, CLIPTextModel, CLIPVisionModel
-from transformers import VisionEncoderDecoderConfig, VisionEncoderDecoderModel
-from transformers import VisionTextDualEncoderModel, VisionTextDualEncoderProcessor
-from PIL import Image
-
-processor = CLIPProcessor.from_pretrained("flax-community/clip-rsicd-v2")
-clip_model = CLIPModel.from_pretrained("flax-community/clip-rsicd-v2")
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+from transformers import CLIPModel
 
 
-class ClipRsvqaModel(CLIPModel):
-    def __init__(self, config, num_labels):
-        super().__init__(clip_model.config)
+class CLIPxRSVQA(CLIPModel):
+    def __init__(self, config, num_labels, device):
+        super().__init__(config)  # este config é o clip_model.config que está no training.py
         self.new_encoder_layer = torch.nn.TransformerEncoderLayer(d_model=512, nhead=8)
         self.new_transformer_encoder = torch.nn.TransformerEncoder(self.new_encoder_layer, num_layers=3)
         self.classification = torch.nn.Linear(512, num_labels, bias=True)
         self.num_labels = num_labels
+        self.device = device
 
     def forward(self, input_ids=None, pixel_values=None, attention_mask=None, position_ids=None, return_loss=None, output_attentions=None, output_hidden_states=None, labels=None):
         output = super().forward(input_ids, pixel_values, attention_mask, position_ids,
@@ -39,12 +30,12 @@ class ClipRsvqaModel(CLIPModel):
         #print("multi modal tensor size needs to be (sequence length, number of batches, feature number)", "(", aux.size()[1], ",", aux.size()[0], ",", aux.size()[2] , ")")
         aux = aux.reshape((aux.size()[1], aux.size()[0], aux.size()[2]))
         #print("after reshape multi modal tensor:", aux, "multi modal tensor size:", aux.size())
-        vision_mask = torch.ones((aux_vision.size()[0], aux_vision.size()[1])).to(device)
+        vision_mask = torch.ones((aux_vision.size()[0], aux_vision.size()[1])).to(self.device)
         #print("text mask", attention_mask, "text size:", attention_mask.size())
         #print("vision mask:", vision_mask, "vision mask size:", vision_mask.size())
 
         #print("text_projection_mask:", text_projection_mask, "text_projection_mask size:", text_projection_mask.size())
-        multi_modal_mask = torch.cat((vision_mask, attention_mask), dim=1).to(device)
+        multi_modal_mask = torch.cat((vision_mask, attention_mask), dim=1).to(self.device)
 
         #print("multi_modal_mask tensor:", multi_modal_mask, "multi_modal_mask size:", multi_modal_mask.size())
         aux = self.new_transformer_encoder(aux, src_key_padding_mask=multi_modal_mask)

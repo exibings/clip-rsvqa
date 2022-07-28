@@ -2,3 +2,4 @@ datasets/*
 logs/RSVQA-HR/*
 logs/RSVQA-LR/*
 logs/RSVQAxBEN/*
+src/clip-rsvqa/__pycache__

@@ -1,16 +1,20 @@
-import datasets
-import json
 import datetime
+import json
 import os
+from copy import deepcopy
+
+import datasets
 import torch
 from PIL import Image
-from copy import deepcopy
-from transformers import CLIPProcessor
+from torch.optim import optim
 from tqdm.auto import tqdm
+from transformers import CLIPModel, CLIPProcessor
+
+from Model import CLIPxRSVQA
 
 
 class Trainer:
-    def __init__(self, limitEpochs=25, batchSize=64, datasetName=None, model=None, optimizer=None, lrScheduler=None, useResizedImages=False) -> None:
+    def __init__(self, limitEpochs=25, batchSize=64, useResizedImages=False, datasetName=None) -> None:
         self.limitEpochs = limitEpochs
         self.batchSize = batchSize
 
@@ -18,6 +22,7 @@ class Trainer:
             "datasets", datasetName, "images", "resized")
         self.datasetName = datasetName
         self.dataset = datasets.load_from_disk(os.path.join("datasets", datasetName, "dataset"))
+        self.encodeDatasetLabels()
         self.trainLoader = torch.utils.data.DataLoader(self.dataset["train"], batch_size=self.batchSize,
                                                        shuffle=True, num_workers=2)
 
@@ -29,14 +34,23 @@ class Trainer:
         self.validationLoader = torch.utils.data.DataLoader(self.dataset["validation"], batch_size=self.batchSize,
                                                             shuffle=False, num_workers=2)
 
-        self.optimizer = optimizer
-        self.lrScheduler = lrScheduler
-        self.model = model
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         self.inputProcessor = CLIPProcessor.from_pretrained("flax-community/clip-rsicd-v2")
 
+        clip_model = CLIPModel.from_pretrained("flax-community/clip-rsicd-v2")
+
+        self.model = CLIPxRSVQA(clip_model.config, num_labels=len(self.label2id))
+        self.model.text_model = clip_model.text_model
+        self.model.vision_model = clip_model.vision_model
+        self.model.visual_projection = clip_model.visual_projection
+        self.model.text_projection = clip_model.text_projection
+        self.model.logit_scale = clip_model.logit_scale
+
+        self.optimizer = optim.AdamW(self.model.parameters(), lr=1e-5)
+
         # TODO criar verificacoes para nao abusar das GPUs todas
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.model.to(self.device)  # send model to GPU
 
     def encodeDatasetLabels(self) -> None:
         """        
@@ -106,13 +120,13 @@ class Trainer:
         for batch in testLoader:
             batch = self.prepareBatch(batch)
             with torch.no_grad():
-                outputs = self.model(**batch)
-            logits = outputs.logits
+                output = self.model(**batch)
+            logits = output.logits
             predictions = torch.argmax(logits, dim=-1)
             accuracy.add_batch(predictions=predictions, references=batch["labels"])
             progress_bar.update(1)
 
-        return accuracy.compute()
+        return accuracy.compute()["accuracy"]
 
     def validate(self, validationLoader):
         """
@@ -129,11 +143,11 @@ class Trainer:
         for batch in validationLoader:
             batch = self.prepareBatch(batch)
             with torch.no_grad():
-                outputs = self.model(**batch)
-            logits = outputs.logits
+                output = self.model(**batch)
+            logits = output.logits
             predictions = torch.argmax(logits, dim=-1)
             accuracy.add_batch(predictions=predictions, references=batch["labels"])
-        return accuracy.compute()
+        return accuracy.compute()["accuracy"], output.loss.item()
 
     def verifyTrainStop(self, epochs, threshold=3) -> bool:
         """
@@ -199,22 +213,19 @@ class Trainer:
         log["device"] = torch.cuda.get_device_name(self.device)
         log["total elapsed time"] = str(datetime.datetime.now() - trainingStartTime)
         log["total epochs"] = len(log["epochs"])
+        log["test accuracy"] = self.test(self.testLoader)
         with open(os.path.join(folderPath, fileName), "w") as logFile:
             json.dump(log, logFile, indent=4)
 
         print("Completed model training in", log["total elapsed time"], ".")
 
-    def train(self, trainLoader, validationLoader) -> None:
+    def train(self) -> None:
         """
         Training loop.
         The training loop has two different stop conditions:
             1) a limit of epochs;
             2) if the interval of epochs between the highest validation accuracy and current epoch is higher than a threshold (default is 3). 
         Once the training loop is complete a complete log is saved.
-
-        Args:
-            trainLoader (torch.utils.data.DataLoader): Supplies the batches to be processed from the training dataset.
-            validationLoader (torch.utils.data.DataLoader): Supplies the batches to be processed from the validation dataset.
         """
         trainingStartTime = datetime.datetime.now()
         log = {}
@@ -223,12 +234,12 @@ class Trainer:
         # training loop
         while epochCount <= self.limitEpochs or self.verifyTrainStop(log["epochs"]):
             epochStartTime = datetime.datetime.now()
-            epochProgress = tqdm(range(len(trainLoader)))
+            epochProgress = tqdm(range(len(self.trainLoader)))
             running_loss = 0.0
             trainAccuracy = datasets.load_metric("accuracy")
             log["epochs"][epochCount] = {}
 
-            for batch in trainLoader:
+            for batch in self.trainLoader:
                 # encode batch and feed it to model
                 batch = self.prepareBatch(batch)
                 self.optimizer.zero_grad()
@@ -238,7 +249,6 @@ class Trainer:
                 output.loss.backward()
                 running_loss += output.loss.item()
                 self.optimizer.step()
-                self.lrScheduler.step()
 
                 logits = output.logits
 
@@ -248,8 +258,9 @@ class Trainer:
 
             # current training loss and accuracy for each epoch
             log["epochs"][epochCount]["train accuracy"] = trainAccuracy.compute()["accuracy"]
-            log["epochs"][epochCount]["validation accuracy"] = self.validate(validationLoader)["accuracy"]
-            log["epochs"][epochCount]["train loss"] = running_loss/len(trainLoader)
+            log["epochs"][epochCount]["validation accuracy"], log["epochs"][epochCount]["validation loss"] = self.validate(
+                self.validationLoader)
+            log["epochs"][epochCount]["train loss"] = running_loss/len(self.trainLoader)
             log["epochs"][epochCount]["elapsed time"] = str(datetime.datetime.now - epochStartTime)
             log["epochs"][epochCount]["model_state"] = deepcopy(self.model.state_dict())
             epochCount += 1
