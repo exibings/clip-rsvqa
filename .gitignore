@@ -1,1 +1,4 @@
-datasets/
+datasets/*
+logs/RSVQA-HR/*
+logs/RSVQA-LR/*
+logs/RSVQAxBEN/*
