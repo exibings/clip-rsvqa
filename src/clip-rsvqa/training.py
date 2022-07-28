@@ -19,9 +19,9 @@ args = {"limitEpochs": args.epochs,
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-print(args, "device", device)
+args["device"] = device
 
+print(args)
 
 trainer = Trainer(**args)
-print(args)
 # trainer.train()

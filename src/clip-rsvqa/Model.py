@@ -10,7 +10,7 @@ class CLIPxRSVQA(CLIPModel):
         self.new_transformer_encoder = torch.nn.TransformerEncoder(self.new_encoder_layer, num_layers=3)
         self.classification = torch.nn.Linear(512, num_labels, bias=True)
         self.num_labels = num_labels
-        self.device = device
+        self.my_device = device
 
     def forward(self, input_ids=None, pixel_values=None, attention_mask=None, position_ids=None, return_loss=None, output_attentions=None, output_hidden_states=None, labels=None):
         output = super().forward(input_ids, pixel_values, attention_mask, position_ids,
@@ -30,12 +30,12 @@ class CLIPxRSVQA(CLIPModel):
         #print("multi modal tensor size needs to be (sequence length, number of batches, feature number)", "(", aux.size()[1], ",", aux.size()[0], ",", aux.size()[2] , ")")
         aux = aux.reshape((aux.size()[1], aux.size()[0], aux.size()[2]))
         #print("after reshape multi modal tensor:", aux, "multi modal tensor size:", aux.size())
-        vision_mask = torch.ones((aux_vision.size()[0], aux_vision.size()[1])).to(self.device)
+        vision_mask = torch.ones((aux_vision.size()[0], aux_vision.size()[1])).to(self.my_device)
         #print("text mask", attention_mask, "text size:", attention_mask.size())
         #print("vision mask:", vision_mask, "vision mask size:", vision_mask.size())
 
         #print("text_projection_mask:", text_projection_mask, "text_projection_mask size:", text_projection_mask.size())
-        multi_modal_mask = torch.cat((vision_mask, attention_mask), dim=1).to(self.device)
+        multi_modal_mask = torch.cat((vision_mask, attention_mask), dim=1).to(self.my_device)
 
         #print("multi_modal_mask tensor:", multi_modal_mask, "multi_modal_mask size:", multi_modal_mask.size())
         aux = self.new_transformer_encoder(aux, src_key_padding_mask=multi_modal_mask)

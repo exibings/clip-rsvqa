@@ -6,7 +6,6 @@ from copy import deepcopy
 import datasets
 import torch
 from PIL import Image
-from torch.optim import optim
 from tqdm.auto import tqdm
 from transformers import CLIPModel, CLIPProcessor
 
@@ -14,7 +13,7 @@ from Model import CLIPxRSVQA
 
 
 class Trainer:
-    def __init__(self, limitEpochs=25, batchSize=64, useResizedImages=False, datasetName=None) -> None:
+    def __init__(self, limitEpochs=25, batchSize=64, useResizedImages=False, datasetName=None, device=torch.device("cpu")) -> None:
         self.limitEpochs = limitEpochs
         self.batchSize = batchSize
 
@@ -34,23 +33,25 @@ class Trainer:
         self.validationLoader = torch.utils.data.DataLoader(self.dataset["validation"], batch_size=self.batchSize,
                                                             shuffle=False, num_workers=2)
 
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.device = device
 
         self.inputProcessor = CLIPProcessor.from_pretrained("flax-community/clip-rsicd-v2")
 
         clip_model = CLIPModel.from_pretrained("flax-community/clip-rsicd-v2")
 
-        self.model = CLIPxRSVQA(clip_model.config, num_labels=len(self.label2id))
+        self.model = CLIPxRSVQA(config=clip_model.config, num_labels=len(self.label2id), device=self.device)
         self.model.text_model = clip_model.text_model
         self.model.vision_model = clip_model.vision_model
         self.model.visual_projection = clip_model.visual_projection
         self.model.text_projection = clip_model.text_projection
         self.model.logit_scale = clip_model.logit_scale
 
-        self.optimizer = optim.AdamW(self.model.parameters(), lr=1e-5)
+        self.optimizer = torch.optim.AdamW(self.model.parameters(), lr=1e-5)
 
         # TODO criar verificacoes para nao abusar das GPUs todas
         self.model.to(self.device)  # send model to GPU
+
+        print("Trainer is ready.")
 
     def encodeDatasetLabels(self) -> None:
         """        
