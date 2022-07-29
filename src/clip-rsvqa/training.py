@@ -24,4 +24,4 @@ args["device"] = device
 print(args)
 
 trainer = Trainer(**args)
-# trainer.train()
+trainer.train()

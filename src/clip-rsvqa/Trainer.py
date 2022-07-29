@@ -54,8 +54,8 @@ class Trainer:
         print("Trainer is ready.")
 
     def encodeDatasetLabels(self) -> None:
-        """        
-        Create translation dictionaries for the labels from the dataset. 
+        """
+        Create translation dictionaries for the labels from the dataset.
         Translates the labels from text to an id - from 1 to N, where N is the number of possible labels in the dataset
         """
         self.labels = list(set(self.dataset["train"]["answer"]))
@@ -67,10 +67,10 @@ class Trainer:
             self.id2label[count] = label
             count += 1
         # print("label2id",label2id)
-        #print("id2label", id2label)
+        # print("id2label", id2label)
 
     def prepareBatch(self, batch) -> dict:
-        """ 
+        """
         Prepares batch for model training. Sends batch to GPU. Returns the processed batch.
 
         Args:
@@ -79,24 +79,28 @@ class Trainer:
         Returns:
             dict: processed batch in GPU, ready to be fed to model.
         """
-        # TODO ver qual é o tipo exato do batch que é passado ao prepareBatch (fazer print de type(batch))
+        # TODO fazer a verificacao das imagens para ver se existem ou não com a tentar encontrar o path completo e ver se é algo que existe - maybe user o assess
         # create training batch
-        imgNames = []
+        imgPaths = []
+        #print("self.imagesPath", self.imagesPath)
+        # RSVQAxBEN image folder is distributed across subfolders.
+        if self.datasetName == "RSVQAxBEN":
+            batch["img_id"] = [os.path.join(str(img_id // 2000), str(img_id)) for img_id in batch["img_id"]]
+        #print("batch imgs", batch["img_id"].tolist())
+
         for img_id in batch["img_id"].tolist():
-            if str(img_id) + ".jpg" in self.imagesPath:
-                if self.datasetName == "RSVQAxBEN":
-                    # RSVQAxBEN image folder is distributed across subfolders.
-                    imgNames.append(os.path.join(str(img_id // 2000), str(img_id) + ".jpg"))
-                else:
-                    imgNames.append(str(img_id) + ".jpg")
-        imgs_to_encode = [Image.open(os.path.join(self.imagesPath, img)) for img in imgNames]
+            if os.path.exists(os.path.join(self.imagesPath, str(img_id) + ".jpg")):
+                imgPaths.append(os.path.join(self.imagesPath, str(img_id) + ".jpg"))
+        #print("imgPaths", imgPaths)
+
+        imgs_to_encode = [Image.open(img) for img in imgPaths]
 
         # process the entire batch at once with padding for dynamic padding
-        processed_batch = self.processor(
+        processed_batch = self.inputProcessor(
             text=batch["question"], images=imgs_to_encode, padding=True, return_tensors="pt")
         del imgs_to_encode  # free up memory from imgs
         processed_input = {**{"labels": torch.tensor([self.label2id[label]
-                                                     for label in batch["answer"]])}, **dict(processed_batch)}
+                                                      for label in batch["answer"]])}, **dict(processed_batch)}
 
         # send tensors to GPU
         for key in processed_input:
@@ -105,7 +109,7 @@ class Trainer:
 
     def test(self, testLoader) -> float:
         """
-        Evaluates the trainer's model performance (accuracy) with the given test dataset.  
+        Evaluates the trainer's model performance (accuracy) with the given test dataset.
 
         Args:
             testLoader (torch.utils.data.DataLoader): Supplies the batches to be processed from the test dataset.
@@ -131,7 +135,7 @@ class Trainer:
 
     def validate(self, validationLoader):
         """
-        Evaluates the trainer's model performance (accuracy) with the given validation dataset.  
+        Evaluates the trainer's model performance (accuracy) with the given validation dataset.
 
         Args:
             validationLoader (torch.utils.data.DataLoader): Supplies the batches to be processed from the validation dataset.
@@ -150,13 +154,13 @@ class Trainer:
             accuracy.add_batch(predictions=predictions, references=batch["labels"])
         return accuracy.compute()["accuracy"], output.loss.item()
 
-    def verifyTrainStop(self, epochs, threshold=3) -> bool:
+    def patience(self, epochs, threshold=3) -> bool:
         """
         Checks if the best model during training was achieved or not.
 
         Args:
             epochs (int): Number of epochs that already happened during training.
-            threshold (int, optional): Threshold for the limit of epochs after the highest validation accuracy is achieved. Defaults to 3.
+            threshold (int, optional): Threshold for the limit of epochs after the highest validation accuracy is achieved (patience). Defaults to 3.
 
         Returns:
             bool: Returns True if the limit for the training hasn't been reached yet.
@@ -225,15 +229,16 @@ class Trainer:
         Training loop.
         The training loop has two different stop conditions:
             1) a limit of epochs;
-            2) if the interval of epochs between the highest validation accuracy and current epoch is higher than a threshold (default is 3). 
+            2) if the interval of epochs between the highest validation accuracy and current epoch is higher than a threshold (default is 3).
         Once the training loop is complete a complete log is saved.
         """
         trainingStartTime = datetime.datetime.now()
         log = {}
+        log["epochs"] = {}
         epochCount = 1
 
         # training loop
-        while epochCount <= self.limitEpochs or self.verifyTrainStop(log["epochs"]):
+        while epochCount <= self.limitEpochs or self.patience(log["epochs"]):
             epochStartTime = datetime.datetime.now()
             epochProgress = tqdm(range(len(self.trainLoader)))
             running_loss = 0.0
@@ -246,7 +251,7 @@ class Trainer:
                 self.optimizer.zero_grad()
 
                 output = self.model(**batch)
-                #print("model output", output)
+                # print("model output", output)
                 output.loss.backward()
                 running_loss += output.loss.item()
                 self.optimizer.step()
