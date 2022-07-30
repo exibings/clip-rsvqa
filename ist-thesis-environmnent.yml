@@ -1,5 +1,6 @@
 name: ist-thesis
 channels:
+  - nvidia
   - pytorch
   - huggingface
   - conda-forge

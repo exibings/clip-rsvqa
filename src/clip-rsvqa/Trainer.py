@@ -14,9 +14,10 @@ from Model import CLIPxRSVQA
 
 
 class Trainer:
-    def __init__(self, limit_epochs: int = 25, batch_size: int = 64, use_resized_images: bool = False, dataset_name: str = None, device: torch.device = torch.device("cpu")) -> None:
+    def __init__(self, limit_epochs: int = 25, batch_size: int = 64, use_resized_images: bool = False, dataset_name: str = None, device: torch.device = torch.device("cpu"), patience: int = 3) -> None:
         self.limit_epochs = limit_epochs
         self.batch_size = batch_size
+        self.patience = patience
 
         self.imagesPath = os.path.join("datasets", dataset_name, "images") if not use_resized_images else os.path.join(
             "datasets", dataset_name, "images", "resized")
@@ -168,7 +169,7 @@ class Trainer:
             metrics.add_batch(predictions=predictions, references=batch["labels"])
         return metrics.compute(), output.loss.item()
 
-    def patience(self, epochs: dict, threshold: int = 3) -> bool:
+    def trainPatience(self, epochs: dict, threshold: int = 3) -> bool:
         """
         Checks if the best model during training was achieved or not.
 
@@ -256,7 +257,7 @@ class Trainer:
         epochCount = 1
 
         # training loop
-        while epochCount <= self.limit_epochs or self.patience(log["epochs"]):
+        while epochCount <= self.limit_epochs or self.trainPatience(log["epochs"], self.patience):
             epochStartTime = datetime.datetime.now()
             print(epochStartTime, "epoch", epochCount)
             epochProgress = tqdm(range(len(self.train_loader)))
