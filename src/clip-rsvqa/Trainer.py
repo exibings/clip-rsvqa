@@ -53,8 +53,6 @@ class Trainer:
         # TODO criar verificacoes para nao abusar das GPUs todas
         self.model.to(self.device)  # send model to GPU
 
-        print("Trainer is ready.")
-
     def encodeDatasetLabels(self) -> None:
         """
         Create translation dictionaries for the labels from the dataset.
@@ -118,11 +116,13 @@ class Trainer:
             If not, only returns one dictionary with the performance metrics (accuracy) for the trainer's model with the test dataset.
 
         """
-        num_test_steps = len(self.test_loader)
-        progress_bar = tqdm(range(num_test_steps))
 
         print("Computing metrics for test dataset.")
+
+        num_test_steps = len(self.test_loader)
+        progress_bar = tqdm(range(num_test_steps))
         metrics = datasets.load_metric("accuracy")
+
         self.model.eval()
         for batch in self.test_loader:
             batch = self.prepareBatch(batch)
@@ -135,9 +135,11 @@ class Trainer:
 
         if self.dataset_name == "RSVQA-HR":
             print("Computing metrics for test Philadelphia dataset.")
+
             num_test_steps = len(self.test_phili_loader)
             progress_bar = tqdm(range(num_test_steps))
             metrics_phili = datasets.load_metric("accuracy")
+
             for batch in self.test_phili_loader:
                 batch = self.prepareBatch(batch)
                 with torch.no_grad():
@@ -181,12 +183,13 @@ class Trainer:
             bool: Returns True if the limit for the training hasn't been reached yet.
         """
         # TODO Test this function
-        print("all epochs:", epochs)
         highest_validation_epoch = self.getBestModel(epochs)
-        print("highest validation epoch", highest_validation_epoch)
-        return len(epochs) < highest_validation_epoch + threshold
+        if highest_validation_epoch == -1:
+            return True
+        else:
+            return len(epochs) < highest_validation_epoch + threshold
 
-    def getBestModel(epochs: dict) -> int:
+    def getBestModel(self, epochs: dict) -> int:
         """
         Given a dictionary with the epochs data returns the epoch with the best model (highest validation metrics)
 
@@ -196,7 +199,10 @@ class Trainer:
         Returns:
             int: Epoch with the highest validation accuracy in the given epochs.
         """
-        return max(epochs, lambda epoch: epochs[epoch]["validation metrics"]["accuracy"])
+        if epochs != {}:
+            return max(epochs, key=lambda epoch: epochs[epoch]["validation metrics"]["accuracy"])
+        else:
+            return -1
 
     def saveBestModel(self,  epochs: dict, folder_path: str) -> None:
         """
@@ -206,7 +212,7 @@ class Trainer:
             epochs (dict): Dictionary with data related to all the training iterations (i.e. accuracies and loss for each epoch)
             folder_path (str): Folder inside logs folder where the model should be saved.
         """
-        torch.save(epochs[self.getBestModel(epochs)]["model_state"], os.path(folder_path, "model.pth"))
+        torch.save(epochs[self.getBestModel(epochs)]["model state"], os.path.join(folder_path, "model.pth"))
 
     def saveTrain(self, log: dict, training_start_time: datetime.datetime) -> None:
         """
@@ -218,30 +224,31 @@ class Trainer:
         """
 
         # create folder for the training session
-        timestamp = str(training_start_time).split(".")[0]
+        timestamp = training_start_time.strftime("%Y-%m-%d %H:%M:%S")
         file_name = timestamp.replace(" ", "_").replace(":", "_").replace("-", "_")
         folder_path = os.path.join("logs", self.dataset_name, file_name)
         os.makedirs(folder_path)
 
-        self.saveBestModel(log["epochs"])
+        self.saveBestModel(log["epochs"], folder_path)
 
         # delete the deep copy of the model's state dict from each epoch (already saved in its own file - model.pth inside the same folder as the log)
         for epoch in log["epochs"]:
-            del epoch["model_state"]
+            del log["epochs"][epoch]["model state"]
         log["file name"] = file_name
         log["dataset"] = self.dataset_name
         log["device"] = torch.cuda.get_device_name(self.device)
-        log["total elapsed time"] = str(datetime.datetime.now() - training_start_time)
+        log["total elapsed time"] = str(datetime.datetime.now() - training_start_time).split(".")[0]
         log["total epochs"] = len(log["epochs"])
+
         if self.dataset_name == "RSVQA-HR":
             log["test metrics"], log["test phili metrics"] = self.test()
         else:
             log["test metrics"] = self.test()
 
-        with open(os.path.join(folder_path, file_name), "w") as logFile:
+        with open(os.path.join(folder_path, file_name + ".json"), "w") as logFile:
             json.dump(log, logFile, indent=4)
 
-        print("Completed model training in", log["total elapsed time"], ".")
+        print("Completed model training in", log["total elapsed time"])
 
     def train(self) -> None:
         """
@@ -251,19 +258,24 @@ class Trainer:
             2) if the interval of epochs between the highest validation accuracy and current epoch is higher than a threshold (default is 3).
         Once the training loop is complete a complete log is saved.
         """
-        training_start_time = datetime.datetime.now()
+        training_start_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         log = {}
+        log["file name"] = None
+        log["dataset"] = None
+        log["device"] = torch.cuda.get_device_name(self.device)
+        log["total elapsed time"] = str(datetime.datetime.now() - training_start_time).split(".")[0]
+        log["total epochs"] = None
         log["epochs"] = {}
-        epochCount = 1
+        epoch_count = 1
 
         # training loop
-        while epochCount <= self.limit_epochs or self.trainPatience(log["epochs"], self.patience):
-            epochStartTime = datetime.datetime.now()
-            print(epochStartTime, "epoch", epochCount)
-            epochProgress = tqdm(range(len(self.train_loader)))
+        while epoch_count <= self.limit_epochs and self.trainPatience(log["epochs"], self.patience):
+            epoch_start_time = datetime.datetime.now()
+            print(epoch_start_time.strftime("%Y-%m-%d %H:%M:%S"), "- epoch", epoch_count)
+            epoch_progress = tqdm(range(len(self.train_loader)))
             running_loss = 0.0
             train_accuracy = datasets.load_metric("accuracy")
-            log["epochs"][epochCount] = {}
+            log["epochs"][epoch_count] = {}
 
             for batch in self.train_loader:
                 # encode batch and feed it to model
@@ -280,14 +292,14 @@ class Trainer:
 
                 predictions = torch.argmax(logits, dim=-1)
                 train_accuracy.add_batch(predictions=predictions, references=batch["labels"])
-                epochProgress.update(1)
+                epoch_progress.update(1)
 
             # current training loss and accuracy for each epoch
-            log["epochs"][epochCount]["train metrics"] = train_accuracy.compute()
-            log["epochs"][epochCount]["validation metrics"], log["epochs"][epochCount]["validation loss"] = self.validate()
-            log["epochs"][epochCount]["train loss"] = running_loss/len(self.train_loader)
-            log["epochs"][epochCount]["elapsed time"] = str(datetime.datetime.now - epochStartTime)
-            log["epochs"][epochCount]["model_state"] = deepcopy(self.model.state_dict())
-            epochCount += 1
+            log["epochs"][epoch_count]["train metrics"] = train_accuracy.compute()
+            log["epochs"][epoch_count]["validation metrics"], log["epochs"][epoch_count]["validation loss"] = self.validate()
+            log["epochs"][epoch_count]["train loss"] = running_loss/len(self.train_loader)
+            log["epochs"][epoch_count]["elapsed time"] = str((datetime.datetime.now() - epoch_start_time)).split(".")[0]
+            log["epochs"][epoch_count]["model state"] = deepcopy(self.model.state_dict())
+            epoch_count += 1
 
-        self.saveTrain(training_start_time)
+        self.saveTrain(log, datetime.datetime.strptime(training_start_time, "%Y-%m-%d %H:%M:%S"))

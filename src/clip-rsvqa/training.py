@@ -23,16 +23,17 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 args["device"] = device
 
-print(args)
 
 trainer = Trainer(**args)
-print("Trainer is ready.\n")
+print("Trainer is ready.")
 
-print("Pre-training test sanity check results:\n")
+"""
+print("Pre-training test sanity check results:")
 if args["dataset_name"] == "RSVQA-HR":
     results = trainer.test()
-    print("\ttest:", results[0], "test phili",  results[1], "\n")
+    print("\ttest metrics:", results[0], "test phili metrics",  results[1], "\n")
 else:
-    print("\ttest:", trainer.test())
+    print("\ttest metrics:", trainer.test())
+"""
 print("Starting training session...")
 trainer.train()

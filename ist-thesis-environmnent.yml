@@ -12,5 +12,6 @@ dependencies:
   - pytorch
   - datasets
   - python
+  - scikit-learn
   - autopep8
 prefix: /cfs/home/u121165/anaconda3/envs/ist-thesis
