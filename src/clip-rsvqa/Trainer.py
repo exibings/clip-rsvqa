@@ -260,11 +260,6 @@ class Trainer:
         """
         training_start_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         log = {}
-        log["file name"] = None
-        log["dataset"] = None
-        log["device"] = torch.cuda.get_device_name(self.device)
-        log["total elapsed time"] = str(datetime.datetime.now() - training_start_time).split(".")[0]
-        log["total epochs"] = None
         log["epochs"] = {}
         epoch_count = 1
 
