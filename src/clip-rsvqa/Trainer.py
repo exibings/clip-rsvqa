@@ -231,6 +231,7 @@ class Trainer:
 
         self.saveBestModel(log["epochs"], folder_path)
 
+        # TODO Passar isto para uma function separada chamda prepareLog em que faco o que esta aqui e troco a ordem para ficar melhor - acrescentar mais coisas no log
         # delete the deep copy of the model's state dict from each epoch (already saved in its own file - model.pth inside the same folder as the log)
         for epoch in log["epochs"]:
             del log["epochs"][epoch]["model state"]
@@ -239,6 +240,7 @@ class Trainer:
         log["device"] = torch.cuda.get_device_name(self.device)
         log["total elapsed time"] = str(datetime.datetime.now() - training_start_time).split(".")[0]
         log["total epochs"] = len(log["epochs"])
+        log["patience"] = self.patience
 
         if self.dataset_name == "RSVQA-HR":
             log["test metrics"], log["test phili metrics"] = self.test()

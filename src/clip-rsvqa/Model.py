@@ -13,9 +13,11 @@ class CLIPxRSVQA(CLIPModel):
         self.my_device = device
 
     def forward(self, input_ids=None, pixel_values=None, attention_mask=None, position_ids=None, return_loss=None, output_attentions=None, output_hidden_states=None, labels=None):
+
         output = super().forward(input_ids, pixel_values, attention_mask, position_ids,
                                  return_loss, output_attentions, output_hidden_states, return_dict=True)
-
+        # quando for os 4 patches apenas chamar 4 vezes o CLIP image
+        # TODO converter este super.forward separar para o CLIP image e o CLIP text
         aux_vision = output.vision_model_output[0]
         aux_vision = self.visual_projection(aux_vision)
         aux_text = output.text_model_output[0]
