@@ -22,7 +22,7 @@ class Trainer:
         self.dataset_name = dataset_name
         self.device = device
 
-        self.imagesPath = os.path.join("datasets", dataset_name, "images") if not use_resized_images else os.path.join(
+        self.images_path = os.path.join("datasets", dataset_name, "images") if not use_resized_images else os.path.join(
             "datasets", dataset_name, "images", "resized")
         self.dataset = datasets.load_from_disk(os.path.join("datasets", dataset_name, "dataset"))
         self.encodeDatasetLabels()
@@ -85,8 +85,8 @@ class Trainer:
             batch["img_id"] = [os.path.join(str(img_id // 2000), str(img_id)) for img_id in batch["img_id"]]
 
         for img_id in batch["img_id"].tolist():
-            if os.path.exists(os.path.join(self.imagesPath, str(img_id) + ".jpg")):
-                img_paths.append(os.path.join(self.imagesPath, str(img_id) + ".jpg"))
+            if os.path.exists(os.path.join(self.images_path, str(img_id) + ".jpg")):
+                img_paths.append(os.path.join(self.images_path, str(img_id) + ".jpg"))
 
         imgs_to_encode = [Image.open(img) for img in img_paths]
 
