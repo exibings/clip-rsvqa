@@ -248,7 +248,12 @@ class Trainer:
 
         return log_to_write
 
-    def saveBestModel(self,  epochs: dict, folder_path: str) -> None:
+    def saveModel(self, epoch: int, state_dict: dict, folder_path: str) -> str:
+        file_path = os.path.join(folder_path, "epoch_" + str(epoch) + "_model.pth")
+        torch.save(state_dict, file_path)
+        return file_path
+
+    def saveBestModel(self,  epochs: dict) -> None:
         """
         Saves the model with the best performance.
 
@@ -256,9 +261,12 @@ class Trainer:
             epochs (dict): Dictionary with data related to all the training iterations (i.e. accuracies and loss for each epoch).
             folder_path (str): Folder inside logs folder where the model should be saved.
         """
+        # TODO test this function
         best_model = self.getBestModel(epochs)
-        torch.save(epochs[best_model]["model state"], os.path.join(
-            folder_path, "epoch_" + str(best_model) + "_model.pth"))
+        all_models = os.listdir(os.path.join("logs", self.dataset_name, self.log_folder_path))
+        for model in all_models:
+            if int(model.split("_")[1]) != best_model:
+                os.remove(model)
 
     def saveTrain(self, epochs: dict, training_start_time: datetime) -> None:
         """
@@ -271,13 +279,11 @@ class Trainer:
         # create folder for the training session
         timestamp = training_start_time.strftime("%Y-%m-%d %H:%M:%S")
         timestamp = timestamp.replace(" ", "_").replace(":", "_").replace("-", "_")
-        folder_path = os.path.join("logs", self.dataset_name, timestamp)
-        os.makedirs(folder_path)
 
         # save the best model and write the logs
-        self.saveBestModel(epochs, folder_path)
+        self.saveBestModel(epochs, self.log_folder_path)
         print("Completed model training in",
-              self.writeLog(epochs, timestamp, folder_path, training_start_time)["total elapsed time"])
+              self.writeLog(epochs, timestamp, self.log_folder_path, training_start_time)["total elapsed time"])
 
     def train(self) -> None:
         """
@@ -289,6 +295,10 @@ class Trainer:
         Once the training loop is complete a complete log is saved.
         """
         training_start_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        self.log_folder_path = os.path.join("logs", self.dataset_name, training_start_time.replace(
+            " ", "_").replace(":", "_").replace("-", "_"))
+        os.makedirs(self.log_folder_path)
+
         epochs = {}
         epoch_count = 1
 
@@ -323,7 +333,8 @@ class Trainer:
             epochs[epoch_count]["validation metrics"], epochs[epoch_count]["validation loss"] = self.validate()
             epochs[epoch_count]["train loss"] = running_loss/len(self.train_loader)
             epochs[epoch_count]["elapsed time"] = str((datetime.now() - epoch_start_time)).split(".")[0]
-            epochs[epoch_count]["model state"] = deepcopy(self.model.state_dict())
+            epochs[epoch_count]["model state"] = self.saveModel(epoch_count, self.model.state_dict())
+
             epoch_count += 1
 
         self.saveTrain(epochs, datetime.strptime(training_start_time, "%Y-%m-%d %H:%M:%S"))
