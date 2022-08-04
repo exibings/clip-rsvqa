@@ -68,7 +68,7 @@ class CLIPxRSVQA(CLIPModel):
             if self.config.problem_type == "regression":
                 loss_fct = torch.nn.MSELoss()
                 if self.num_labels == 1:
-                    loss = loss_fct(output.logits.squeeze(), labels.squeeze())
+                    output.loss = loss_fct(output.logits.squeeze(), labels.squeeze())
                 else:
                     output.loss = loss_fct(output.logits, labels)
             elif self.config.problem_type == "single_label_classification":

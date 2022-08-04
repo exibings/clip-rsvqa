@@ -80,7 +80,7 @@ class Trainer:
         """
         # create training batch
         img_paths = []
-        # RSVQAxBEN image folder is distributed across subfolders.
+        # RSVQAxBEN image folder is distributed across subfolders
         if self.dataset_name == "RSVQAxBEN":
             batch["img_id"] = [os.path.join(str(img_id // 2000), str(img_id)) for img_id in batch["img_id"]]
 
@@ -113,10 +113,9 @@ class Trainer:
             If not, only returns one dictionary with the performance metrics (accuracy) for the trainer's model with the test dataset.
 
         """
-        print("Computing metrics for test dataset.")
+        print("Computing metrics for test dataset")
 
-        num_test_steps = len(self.test_loader)
-        progress_bar = tqdm(range(num_test_steps))
+        progress_bar = tqdm(range(len(self.test_loader)))
         metrics = datasets.load_metric("accuracy")
 
         self.model.eval()
@@ -130,10 +129,9 @@ class Trainer:
             progress_bar.update(1)
 
         if self.dataset_name == "RSVQA-HR":
-            print("Computing metrics for test Philadelphia dataset.")
+            print("Computing metrics for test Philadelphia dataset")
 
-            num_test_steps = len(self.test_phili_loader)
-            progress_bar = tqdm(range(num_test_steps))
+            progress_bar = tqdm(range(len(self.test_phili_loader)))
             metrics_phili = datasets.load_metric("accuracy")
 
             for batch in self.test_phili_loader:
@@ -167,22 +165,21 @@ class Trainer:
             metrics.add_batch(predictions=predictions, references=batch["labels"])
         return metrics.compute(), output.loss.item()
 
-    def trainPatience(self, epochs: dict, threshold: int = 3) -> bool:
+    def trainPatience(self, epochs: dict) -> bool:
         """
-        Checks if the best model during training was achieved or not.
+        Checks if the best model during training was achieved or not. If the patience is 0, patience check is ignored. 
 
         Args:
             epochs (int): Number of epochs that already happened during training.
-            threshold (int, optional): Threshold for the limit of epochs after the highest validation accuracy is achieved (patience). Defaults to 3.
 
         Returns:
             bool: Returns True if the limit for the training hasn't been reached yet.
         """
         highest_validation_epoch = self.getBestModel(epochs)
-        if highest_validation_epoch == -1:
+        if highest_validation_epoch == -1 or self.patience == 0:
             return True
         else:
-            return len(epochs) < highest_validation_epoch + threshold
+            return len(epochs) < highest_validation_epoch + self.patience
 
     def getBestModel(self, epochs: dict) -> int:
         """
@@ -199,7 +196,7 @@ class Trainer:
         else:
             return -1
 
-    def writeLog(self, epochs: dict, file_name: str,  folder_path: str, training_start_time: datetime) -> dict:
+    def writeLog(self, epochs: dict, file_name: str, training_start_time: datetime) -> dict:
         """
         Writes a full log of the training session. Includes the following information:
             - file name;
@@ -215,15 +212,11 @@ class Trainer:
         Args:
             epochs (dict): Dictionary with the metrics for each training epoch.
             file_name (str): File name to be used for the log file.
-            folder_path (str): Folder where the log file will be saved at.
             training_start_time (datetime): Timestamp of when the training session started.
 
         Returns:
             dict: Dictionary that was writen as a JSON.
         """
-        # delete the deep copy of the model's state dict from each epoch (already saved in its own file - model.pth inside the same folder as the log)
-        for epoch in epochs:
-            del epochs[epoch]["model state"]
 
         log_to_write = {
             "file name": file_name,
@@ -241,32 +234,33 @@ class Trainer:
         else:
             log_to_write["test metrics"] = self.test()
 
+        log_to_write["best model"] = os.path.join(
+            self.log_folder_path, "epoch_" + str(self.getBestModel(epochs)) + "_model.pth")
         log_to_write["epochs"] = epochs
 
-        with open(os.path.join(folder_path, file_name + ".json"), "w") as log_file:
+        with open(os.path.join(self.log_folder_path, file_name + ".json"), "w") as log_file:
             json.dump(log_to_write, log_file, indent=4)
 
         return log_to_write
 
-    def saveModel(self, epoch: int, state_dict: dict, folder_path: str) -> str:
-        file_path = os.path.join(folder_path, "epoch_" + str(epoch) + "_model.pth")
-        torch.save(state_dict, file_path)
-        return file_path
-
-    def saveBestModel(self,  epochs: dict) -> None:
+    def saveModel(self, epoch: int, epochs: int) -> None:
         """
-        Saves the model with the best performance.
-
+        Updates the currently saved models to only keep the current best model
         Args:
-            epochs (dict): Dictionary with data related to all the training iterations (i.e. accuracies and loss for each epoch).
-            folder_path (str): Folder inside logs folder where the model should be saved.
+            epoch (int): corresponding epoch of the model that it is being saved.
+            epochs (int): data related to all the previous epochs.
+
+        Returns:
+            str: path of the saved model file.
         """
-        # TODO test this function
-        best_model = self.getBestModel(epochs)
-        all_models = os.listdir(os.path.join("logs", self.dataset_name, self.log_folder_path))
-        for model in all_models:
-            if int(model.split("_")[1]) != best_model:
-                os.remove(model)
+
+        if self.getBestModel(epochs) == epoch:
+            for model in os.listdir(self.log_folder_path):
+                if model.endswith(".pth"):
+                    # delete the previous best model
+                    os.remove(os.path.join(self.log_folder_path, model))
+            file_path = os.path.join(self.log_folder_path, "epoch_" + str(epoch) + "_model.pth")
+            torch.save(self.model.state_dict(), file_path)
 
     def saveTrain(self, epochs: dict, training_start_time: datetime) -> None:
         """
@@ -276,14 +270,12 @@ class Trainer:
             log (dict): Dictionary with all the information relevant to the training.
             training_start_time (datetime): Timestamp of when the training started.
         """
-        # create folder for the training session
         timestamp = training_start_time.strftime("%Y-%m-%d %H:%M:%S")
         timestamp = timestamp.replace(" ", "_").replace(":", "_").replace("-", "_")
 
         # save the best model and write the logs
-        self.saveBestModel(epochs, self.log_folder_path)
         print("Completed model training in",
-              self.writeLog(epochs, timestamp, self.log_folder_path, training_start_time)["total elapsed time"])
+              self.writeLog(epochs, timestamp, training_start_time)["total elapsed time"])
 
     def train(self) -> None:
         """
@@ -292,8 +284,10 @@ class Trainer:
             1) a limit of epochs is reached;
 
             2) if the interval of epochs between the highest validation accuracy and current epoch is higher than a threshold (default is 3).
-        Once the training loop is complete a complete log is saved.
+            If the threshold value is 0 this stop condition is ignored.
+        Once the training loop is complete a log is saved.
         """
+        # create log folder for the training session
         training_start_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         self.log_folder_path = os.path.join("logs", self.dataset_name, training_start_time.replace(
             " ", "_").replace(":", "_").replace("-", "_"))
@@ -303,9 +297,9 @@ class Trainer:
         epoch_count = 1
 
         # training loop
-        while epoch_count <= self.limit_epochs and self.trainPatience(epochs, self.patience):
+        while epoch_count <= self.limit_epochs and self.trainPatience(epochs):
             epoch_start_time = datetime.now()
-            print(epoch_start_time.strftime("%Y-%m-%d %H:%M:%S"), "- epoch", epoch_count)
+            print(epoch_start_time.strftime("%Y-%m-%d %H:%M:%S"), "- Started epoch", epoch_count)
             epoch_progress = tqdm(range(len(self.train_loader)))
             running_loss = 0.0
             train_accuracy = datasets.load_metric("accuracy")
@@ -317,7 +311,6 @@ class Trainer:
                 self.optimizer.zero_grad()
 
                 output = self.model(**batch)
-                # print("model output", output)
                 output.loss.backward()
                 running_loss += output.loss.item()
                 self.optimizer.step()
@@ -329,12 +322,16 @@ class Trainer:
                 epoch_progress.update(1)
 
             # current training loss and accuracy for each epoch
+            epoch_finish_time = datetime.now()
             epochs[epoch_count]["train metrics"] = train_accuracy.compute()
             epochs[epoch_count]["validation metrics"], epochs[epoch_count]["validation loss"] = self.validate()
             epochs[epoch_count]["train loss"] = running_loss/len(self.train_loader)
-            epochs[epoch_count]["elapsed time"] = str((datetime.now() - epoch_start_time)).split(".")[0]
-            epochs[epoch_count]["model state"] = self.saveModel(epoch_count, self.model.state_dict())
+            epochs[epoch_count]["elapsed time"] = str((epoch_finish_time - epoch_start_time)).split(".")[0]
+            # save the model state is this epoch has the current best model
+            self.saveModel(epoch_count, epochs)
 
+            print(epoch_finish_time.strftime("%Y-%m-%d %H:%M:%S"), "- Finished epoch", epoch_count)
+            epoch_progress.close()
             epoch_count += 1
 
         self.saveTrain(epochs, datetime.strptime(training_start_time, "%Y-%m-%d %H:%M:%S"))
