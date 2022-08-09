@@ -1,7 +1,6 @@
 from datetime import datetime
 import json
 import os
-from copy import deepcopy
 from typing import Tuple, Union
 
 import datasets
@@ -47,7 +46,9 @@ class Trainer:
         self.model.text_projection = clip_model.text_projection
         self.model.logit_scale = clip_model.logit_scale
 
-        self.optimizer = torch.optim.AdamW(self.model.parameters(), lr=1e-5)
+        self.lr = 1e-5
+        self.optimizer = torch.optim.AdamW(self.model.parameters(), lr=self.lr)
+        self.lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, "min", patience=1)
 
         self.model.to(self.device)  # send model to GPU
 
@@ -203,6 +204,7 @@ class Trainer:
             - dataset;
             - total elapsed time;
             - total number of epochs;
+            - initial learning rate;
             - used patience;
             - used batch size;
             - whether resized images were used;
@@ -224,6 +226,7 @@ class Trainer:
             "device": torch.cuda.get_device_name(self.device),
             "total elapsed time": str(datetime.now() - training_start_time).split(".")[0],
             "total epochs": len(epochs),
+            "initial learning rate": self.lr,
             "patience": self.patience,
             "batch size": self.batch_size,
             "resized images": self.use_resized_images
@@ -305,6 +308,7 @@ class Trainer:
             train_accuracy = datasets.load_metric("accuracy")
             epochs[epoch_count] = {}
 
+            # train
             for batch in self.train_loader:
                 # encode batch and feed it to model
                 batch = self.prepareBatch(batch)
@@ -321,17 +325,21 @@ class Trainer:
                 train_accuracy.add_batch(predictions=predictions, references=batch["labels"])
                 epoch_progress.update(1)
 
-            # current training loss and accuracy for each epoch
+            # current training loss and accuracy for the epoch
             epoch_finish_time = datetime.now()
+            epochs[epoch_count]["learning rate"] = self.lr_scheduler.optimizer.param_groups[0]["lr"]
             epochs[epoch_count]["train metrics"] = train_accuracy.compute()
-            epochs[epoch_count]["validation metrics"], epochs[epoch_count]["validation loss"] = self.validate()
             epochs[epoch_count]["train loss"] = running_loss/len(self.train_loader)
+            # validate the training epoch
+            epochs[epoch_count]["validation metrics"], epochs[epoch_count]["validation loss"] = self.validate()
             epochs[epoch_count]["elapsed time"] = str((epoch_finish_time - epoch_start_time)).split(".")[0]
-            # save the model state is this epoch has the current best model
+            # save the model state if this epoch has the current best model
             self.saveModel(epoch_count, epochs)
+            # update learning rate
+            self.lr_scheduler.step(epochs[epoch_count]["validation loss"])
 
-            print(epoch_finish_time.strftime("%Y-%m-%d %H:%M:%S"), "- Finished epoch", epoch_count)
             epoch_progress.close()
+            print(epoch_finish_time.strftime("%Y-%m-%d %H:%M:%S"), "- Finished epoch", epoch_count)
             epoch_count += 1
 
         self.saveTrain(epochs, datetime.strptime(training_start_time, "%Y-%m-%d %H:%M:%S"))

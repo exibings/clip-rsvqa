@@ -14,4 +14,6 @@ dependencies:
   - python
   - scikit-learn
   - autopep8
+  - spacy
+  - ftfy
 prefix: /cfs/home/u121165/anaconda3/envs/ist-thesis
