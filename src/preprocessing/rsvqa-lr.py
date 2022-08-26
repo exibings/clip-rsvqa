@@ -11,7 +11,7 @@ lrDataset = datasets.DatasetDict({"train": lrDataset["train"],
                                       "test": lrDataset["test"],
                                       "validation":lrDataset["validation"]})
 
-lrDataset = lrDataset.remove_columns(["mode", "category"])
+lrDataset = lrDataset.remove_columns(["mode"])
 
 print(lrDataset)
 print("saving to disk...")

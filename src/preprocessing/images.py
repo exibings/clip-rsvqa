@@ -18,7 +18,7 @@ def jpgOnly(dataset_name: str) -> None:
                         print("removing", file)
                         os.remove(os.path.join("datasets", dataset_name, "images", file))
                 except:
-                        print("found the \"resized\" subfolder.")
+                    print("found the",  file, "subfolder.")
     else:
         for file in os.listdir(os.path.join("datasets", dataset_name, "images")):
             try:
@@ -44,23 +44,21 @@ def imageResizer(dataset_name: str, imageSize: int = 224) -> None:
         total = 0
         total_resized = 0
         for subfolder in os.listdir(os.path.join("datasets", "RSVQAxBEN", "images")):
-            images_checker[subfolder] = 0
             images_checker[subfolder] = len(os.listdir(os.path.join("datasets", "RSVQAxBEN", "images", subfolder)))
             total += images_checker[subfolder] if subfolder != "resized" else 0
         for subfolder in os.listdir(os.path.join("datasets", "RSVQAxBEN", "images", "resized")):
-            images_checker_resized[subfolder] = 0
             images_checker_resized[subfolder] = len(os.listdir(os.path.join(
                 "datasets", "RSVQAxBEN", "images", "resized", subfolder)))
             total_resized += images_checker_resized[subfolder]
 
-        print("total images", len(total), "distributed in", len(images_checker), "folders")
-        print("already resized", len(total_resized), "distributed in", len(images_checker_resized), "folders")
+        print("total images", total, "distributed in", len(images_checker)-1, "folders")
+        print("already resized", total_resized, "distributed in", len(images_checker_resized), "folders")
 
         # image resizing for RSVQAxBEN
         for subfolder in images_checker:
             if subfolder not in images_checker_resized:
                 os.makedirs(os.path.join("datasets", "RSVQAxBEN", "images", "resized", subfolder))
-            for img in images_checker[subfolder]:
+            for img in os.listdir(os.path.join("datasets", "RSVQAxBEN", "images", subfolder)):
                 if img.endswith(".jpg") and not os.path.exists(os.path.join("datasets", "RSVQAxBEN", "images", "resized", subfolder, img)):
                     print("resizing", img)
                     image = Image.open(os.path.join("datasets", "RSVQAxBEN", "images", subfolder, img))
@@ -83,18 +81,17 @@ def imageResizer(dataset_name: str, imageSize: int = 224) -> None:
                     image.save(os.path.join("datasets", dataset_name, "images", "resized", img))
 
 
-
 def verifyImages():
     print("Verifying RSVQA-LR images...")
     print("\tall original images?", True if len(os.listdir(os.path.join("datasets", "RSVQA-LR", "images"))) == 772+1 else False)
     print("\tall resized images?", True if len(os.listdir(os.path.join(
-    "datasets", "RSVQA-LR", "images", "resized"))) == 772 else False)
+        "datasets", "RSVQA-LR", "images", "resized"))) == 772 else False)
 
     print("Verifying RSVQA-HR images...")
-    print("\tall original images?", True if len(os.listdir(os.path.join("datasets", "RSVQA-HR", "images"))) == 10659+1 else False)
+    print("\tall original images?", True if len(os.listdir(
+        os.path.join("datasets", "RSVQA-HR", "images"))) == 10659+1 else False)
     print("\tall resized images?", True if len(os.listdir(os.path.join(
-        "datasets", "RSVQA-LR", "images", "resized"))) == 10659 else False)
-
+        "datasets", "RSVQA-HR", "images", "resized"))) == 10659 else False)
 
     print("Verifying RSVQAxBEN images...")
     images_checker = {}

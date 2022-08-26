@@ -29,5 +29,8 @@ args["device"] = device
 trainer = Trainer(**args)
 print("Trainer is ready.")
 
-print("Starting training session...")
-trainer.train()
+#print("Starting training session...")
+# trainer.train()
+
+#print("Starting testing session...")
+# print(trainer.test())

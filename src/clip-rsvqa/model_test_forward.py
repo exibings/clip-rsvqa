@@ -2,7 +2,7 @@ import torch
 import os
 import datasets
 from Model import CLIPxRSVQA
-from transformers import CLIPModel, CLIPProcessor
+from transformers import CLIPModel, CLIPProcessor, CLIPFeatureExtractor, CLIPTokenizer
 from PIL import Image
 
 
@@ -21,8 +21,11 @@ for label in labels:
     label2id[label] = count
     id2label[count] = label
     count += 1
-
 input_processor = CLIPProcessor.from_pretrained("flax-community/clip-rsicd-v2")
+feature_extractor = CLIPFeatureExtractor.from_pretrained("flax-community/clip-rsicd-v2")
+# TODO check if this freezes image feature extractor parameters during training - isto provavelmente sera fazer um for entre os parameters do feature extractor
+feature_extractor.requires_grad = False
+tokenizer = CLIPTokenizer.from_pretrained("flax-community/clip-rsicd-v2")
 clip_model = CLIPModel.from_pretrained("flax-community/clip-rsicd-v2")
 
 model = CLIPxRSVQA(config=clip_model.config, num_labels=len(label2id), device=device)
@@ -48,9 +51,8 @@ def prepareBatch(batch: dict) -> dict:
     Returns:
         dict: processed batch in GPU, ready to be fed to model.
     """
-    # create batch
+    # create training batch
     img_paths = []
-
     for img_id in batch["img_id"].tolist():
         if os.path.exists(os.path.join(img_folder, str(img_id) + ".jpg")):
             img_paths.append(os.path.join(img_folder, str(img_id) + ".jpg"))
@@ -60,6 +62,8 @@ def prepareBatch(batch: dict) -> dict:
     # process the entire batch at once with padding for dynamic padding
     processed_batch = input_processor(
         text=batch["question"], images=imgs_to_encode, padding=True, return_tensors="pt")
+    # processed_batch = {**dict(tokenizer(batch["question"], return_tensors="pt", padding=true))}
+    # processed_batch = {**processed_batch, **dict(feature_extractor(imgs_to_encode, return_tensors="pt"))}
     del imgs_to_encode  # free up memory from imgs
     processed_input = {**{"labels": torch.tensor([label2id[label]
                                                   for label in batch["answer"]])}, **dict(processed_batch)}

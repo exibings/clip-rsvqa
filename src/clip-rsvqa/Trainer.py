@@ -7,7 +7,7 @@ import datasets
 import torch
 from PIL import Image
 from tqdm.auto import tqdm
-from transformers import CLIPModel, CLIPProcessor
+from transformers import CLIPModel, CLIPProcessor, CLIPFeatureExtractor, CLIPTokenizer
 
 from Model import CLIPxRSVQA
 
@@ -37,6 +37,10 @@ class Trainer:
                                                              shuffle=False, num_workers=2)
 
         self.input_processor = CLIPProcessor.from_pretrained("flax-community/clip-rsicd-v2")
+        #self.feature_extractor = CLIPFeatureExtractor.from_pretrained("flax-community/clip-rsicd-v2")
+        # TODO check if this freezes image feature extractor parameters during training - isto provavelmente sera fazer um for entre os parameters do feature extractor
+        #self.feature_extractor.requires_grad = False
+        #self.tokenizer = CLIPTokenizer.from_pretrained("flax-community/clip-rsicd-v2")
         clip_model = CLIPModel.from_pretrained("flax-community/clip-rsicd-v2")
 
         self.model = CLIPxRSVQA(config=clip_model.config, num_labels=len(self.label2id), device=self.device)
@@ -46,7 +50,7 @@ class Trainer:
         self.model.text_projection = clip_model.text_projection
         self.model.logit_scale = clip_model.logit_scale
 
-        self.lr = 1e-5
+        self.lr = 1e-4
         self.optimizer = torch.optim.AdamW(self.model.parameters(), lr=self.lr)
         self.lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, "min", patience=1)
 
@@ -94,6 +98,8 @@ class Trainer:
         # process the entire batch at once with padding for dynamic padding
         processed_batch = self.input_processor(
             text=batch["question"], images=imgs_to_encode, padding=True, return_tensors="pt")
+        # processed_batch = {**dict(self.tokenizer(batch["question"], return_tensors="pt", padding=true))}
+        # processed_batch = {**processed_batch, **dict(self.feature_extractor(imgs_to_encode, return_tensors="pt"))}
         del imgs_to_encode  # free up memory from imgs
         processed_input = {**{"labels": torch.tensor([self.label2id[label]
                                                       for label in batch["answer"]])}, **dict(processed_batch)}
@@ -117,35 +123,51 @@ class Trainer:
         print("Computing metrics for test dataset")
 
         progress_bar = tqdm(range(len(self.test_loader)))
-        metrics = datasets.load_metric("accuracy")
+        metrics = {"overall": datasets.load_metric("accuracy")}
+        for question_type in list(set(self.dataset["test"]["category"])):
+            metrics[str(question_type)] = datasets.load_metric("accuracy")
 
         self.model.eval()
         for batch in self.test_loader:
-            batch = self.prepareBatch(batch)
+            processed_input = self.prepareBatch(batch)
             with torch.no_grad():
-                output = self.model(**batch)
+                output = self.model(**processed_input)
             logits = output.logits
             predictions = torch.argmax(logits, dim=-1)
-            metrics.add_batch(predictions=predictions, references=batch["labels"])
+            for (prediction, category, ground_truth) in zip(predictions, batch["category"], processed_input["labels"]):
+                #print("adding entry for category", category)
+                metrics[category].add(prediction=prediction, reference=ground_truth)
+            metrics["overall"].add_batch(predictions=predictions, references=processed_input["labels"])
             progress_bar.update(1)
 
         if self.dataset_name == "RSVQA-HR":
             print("Computing metrics for test Philadelphia dataset")
 
             progress_bar = tqdm(range(len(self.test_phili_loader)))
-            metrics_phili = datasets.load_metric("accuracy")
-
+            metrics_phili = {"overall": datasets.load_metric("accuracy")}
+            for question_type in list(set(self.dataset["test"]["category"])):
+                metrics_phili[str(question_type)] = datasets.load_metric("accuracy")
             for batch in self.test_phili_loader:
-                batch = self.prepareBatch(batch)
+                processed_input = self.prepareBatch(batch)
                 with torch.no_grad():
                     output = self.model(**batch)
                 logits = output.logits
                 predictions = torch.argmax(logits, dim=-1)
-                metrics_phili.add_batch(predictions=predictions, references=batch["labels"])
+                for (prediction, category, ground_truth) in zip(predictions, batch["category"], processed_input["labels"]):
+                    metrics_phili[category].add(prediction=prediction, reference=ground_truth)
+                metrics_phili["overall"].add_batch(predictions=predictions, references=processed_input["labels"])
                 progress_bar.update(1)
-            return metrics.compute(), metrics_phili.compute()
 
-        return metrics.compute()
+            for category in metrics:
+                metrics[category] = metrics[category].compute()
+            for category in metrics_phili:
+                metrics_phili[category] = metrics_phili[category].compute()
+            return metrics, metrics_phili
+
+        for category in metrics:
+            print("computing the metrics for category", category)
+            metrics[category] = metrics[category].compute()
+        return metrics
 
     def validate(self) -> Tuple[dict, float]:
         """
@@ -158,12 +180,12 @@ class Trainer:
         metrics = datasets.load_metric("accuracy")
         self.model.eval()
         for batch in self.validation_loader:
-            batch = self.prepareBatch(batch)
+            processed_input = self.prepareBatch(batch)
             with torch.no_grad():
-                output = self.model(**batch)
+                output = self.model(**processed_input)
             logits = output.logits
             predictions = torch.argmax(logits, dim=-1)
-            metrics.add_batch(predictions=predictions, references=batch["labels"])
+            metrics.add_batch(predictions=predictions, references=processed_input["labels"])
         return metrics.compute(), output.loss.item()
 
     def trainPatience(self, epochs: dict) -> bool:
@@ -311,10 +333,10 @@ class Trainer:
             # train
             for batch in self.train_loader:
                 # encode batch and feed it to model
-                batch = self.prepareBatch(batch)
+                processed_input = self.prepareBatch(batch)
                 self.optimizer.zero_grad()
 
-                output = self.model(**batch)
+                output = self.model(**processed_input)
                 output.loss.backward()
                 running_loss += output.loss.item()
                 self.optimizer.step()
@@ -322,7 +344,7 @@ class Trainer:
                 logits = output.logits
 
                 predictions = torch.argmax(logits, dim=-1)
-                train_accuracy.add_batch(predictions=predictions, references=batch["labels"])
+                train_accuracy.add_batch(predictions=predictions, references=processed_input["labels"])
                 epoch_progress.update(1)
 
             # current training loss and accuracy for the epoch
