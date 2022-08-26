@@ -13,7 +13,7 @@ from Model import CLIPxRSVQA
 
 
 class Trainer:
-    def __init__(self, limit_epochs: int = 25, batch_size: int = 64, patience: int = 3, use_resized_images: bool = False, dataset_name: str = None, device: torch.device = torch.device("cpu")) -> None:
+    def __init__(self, limit_epochs: int = 25, batch_size: int = 120, patience: int = 3, use_resized_images: bool = False, dataset_name: str = None, device: torch.device = torch.device("cpu")) -> None:
         self.limit_epochs = limit_epochs
         self.batch_size = batch_size
         self.patience = patience
@@ -135,10 +135,10 @@ class Trainer:
             logits = output.logits
             predictions = torch.argmax(logits, dim=-1)
             for (prediction, category, ground_truth) in zip(predictions, batch["category"], processed_input["labels"]):
-                #print("adding entry for category", category)
                 metrics[category].add(prediction=prediction, reference=ground_truth)
-            metrics["overall"].add_batch(predictions=predictions, references=processed_input["labels"])
+                metrics["overall"].add(prediction=prediction, references=ground_truth)
             progress_bar.update(1)
+        progress_bar.close()
 
         if self.dataset_name == "RSVQA-HR":
             print("Computing metrics for test Philadelphia dataset")
@@ -155,7 +155,7 @@ class Trainer:
                 predictions = torch.argmax(logits, dim=-1)
                 for (prediction, category, ground_truth) in zip(predictions, batch["category"], processed_input["labels"]):
                     metrics_phili[category].add(prediction=prediction, reference=ground_truth)
-                metrics_phili["overall"].add_batch(predictions=predictions, references=processed_input["labels"])
+                    metrics_phili["overall"].add(prediction=prediction, references=ground_truth)
                 progress_bar.update(1)
 
             for category in metrics:
@@ -164,9 +164,13 @@ class Trainer:
                 metrics_phili[category] = metrics_phili[category].compute()
             return metrics, metrics_phili
 
+        total_accuracy = 0
         for category in metrics:
             print("computing the metrics for category", category)
             metrics[category] = metrics[category].compute()
+            if category != "overall":
+                total_accuracy += metrics[category]["accuracy"]
+        metrics["average"] = total_accuracy / (len(metrics) - 1)
         return metrics
 
     def validate(self) -> Tuple[dict, float]:
