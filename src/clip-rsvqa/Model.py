@@ -5,7 +5,7 @@ from transformers import CLIPModel
 
 class CLIPxRSVQA(CLIPModel):
     def __init__(self, config, num_labels, device):
-        super().__init__(config)  # este config é o clip_model.config que está no training.py
+        super().__init__(config)
         self.new_encoder_layer = torch.nn.TransformerEncoderLayer(d_model=512, nhead=8)
         self.new_transformer_encoder = torch.nn.TransformerEncoder(self.new_encoder_layer, num_layers=3)
         self.classification = torch.nn.Linear(512, num_labels, bias=True)

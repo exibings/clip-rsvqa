@@ -13,7 +13,8 @@ from Model import CLIPxRSVQA
 
 
 class Trainer:
-    def __init__(self, limit_epochs: int = 25, batch_size: int = 120, patience: int = 3, use_resized_images: bool = False, dataset_name: str = None, device: torch.device = torch.device("cpu")) -> None:
+    def __init__(self, limit_epochs: int = 25, batch_size: int = 120, patience: int = 3, use_resized_images: bool = False, dataset_name: str = None,
+                 device: torch.device = torch.device("cpu"), load_model=False, model_path=None) -> None:
         self.limit_epochs = limit_epochs
         self.batch_size = batch_size
         self.patience = patience
@@ -42,13 +43,19 @@ class Trainer:
         #self.feature_extractor.requires_grad = False
         #self.tokenizer = CLIPTokenizer.from_pretrained("flax-community/clip-rsicd-v2")
         clip_model = CLIPModel.from_pretrained("flax-community/clip-rsicd-v2")
-
         self.model = CLIPxRSVQA(config=clip_model.config, num_labels=len(self.label2id), device=self.device)
         self.model.text_model = clip_model.text_model
         self.model.vision_model = clip_model.vision_model
         self.model.visual_projection = clip_model.visual_projection
         self.model.text_projection = clip_model.text_projection
         self.model.logit_scale = clip_model.logit_scale
+
+        if load_model:
+            loaded_data = torch.load(model_path)
+            self.model.load_state_dict(loaded_data["model_state_dict"])
+            self.id2label = loaded_data["id2label"]
+            self.label2id = loaded_data["label2id"]
+            print("A model has been loaded from file", model_path)
 
         self.lr = 1e-4
         self.optimizer = torch.optim.AdamW(self.model.parameters(), lr=self.lr)
@@ -70,8 +77,7 @@ class Trainer:
             self.label2id[label] = count
             self.id2label[count] = label
             count += 1
-        # print("label2id",label2id)
-        # print("id2label", id2label)
+
 
     def prepareBatch(self, batch: dict) -> dict:
         """
@@ -166,7 +172,6 @@ class Trainer:
 
         total_accuracy = 0
         for category in metrics:
-            print("computing the metrics for category", category)
             metrics[category] = metrics[category].compute()
             if category != "overall":
                 total_accuracy += metrics[category]["accuracy"]
@@ -190,6 +195,7 @@ class Trainer:
             logits = output.logits
             predictions = torch.argmax(logits, dim=-1)
             metrics.add_batch(predictions=predictions, references=processed_input["labels"])
+        self.model.train()
         return metrics.compute(), output.loss.item()
 
     def trainPatience(self, epochs: dict) -> bool:
@@ -288,8 +294,9 @@ class Trainer:
                 if model.endswith(".pth"):
                     # delete the previous best model
                     os.remove(os.path.join(self.log_folder_path, model))
-            file_path = os.path.join(self.log_folder_path, "epoch_" + str(epoch) + "_model.pth")
-            torch.save(self.model.state_dict(), file_path)
+            file_path = os.path.join(self.log_folder_path, "epoch_" + str(epoch) + "_model.pt")
+            torch.save({"label2id": self.label2id, "id2label": self.id2label,
+                       "model_state_dict": self.model.state_dict()}, file_path)
 
     def saveTrain(self, epochs: dict, training_start_time: datetime) -> None:
         """
