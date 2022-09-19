@@ -7,7 +7,7 @@ import datasets
 import torch
 from PIL import Image
 from tqdm.auto import tqdm
-from transformers import CLIPModel, CLIPProcessor, CLIPFeatureExtractor, CLIPTokenizer
+from transformers import CLIPProcessor
 
 from Model import CLIPxRSVQA
 
@@ -38,17 +38,7 @@ class Trainer:
                                                              shuffle=False, num_workers=2)
 
         self.input_processor = CLIPProcessor.from_pretrained("flax-community/clip-rsicd-v2")
-        #self.feature_extractor = CLIPFeatureExtractor.from_pretrained("flax-community/clip-rsicd-v2")
-        # TODO check if this freezes image feature extractor parameters during training - isto provavelmente sera fazer um for entre os parameters do feature extractor
-        #self.feature_extractor.requires_grad = False
-        #self.tokenizer = CLIPTokenizer.from_pretrained("flax-community/clip-rsicd-v2")
-        clip_model = CLIPModel.from_pretrained("flax-community/clip-rsicd-v2")
-        self.model = CLIPxRSVQA(config=clip_model.config, num_labels=len(self.label2id), device=self.device)
-        self.model.text_model = clip_model.text_model
-        self.model.vision_model = clip_model.vision_model
-        self.model.visual_projection = clip_model.visual_projection
-        self.model.text_projection = clip_model.text_projection
-        self.model.logit_scale = clip_model.logit_scale
+        self.model = CLIPxRSVQA(num_labels=len(self.label2id))
 
         if load_model:
             loaded_data = torch.load(model_path)
@@ -77,7 +67,6 @@ class Trainer:
             self.label2id[label] = count
             self.id2label[count] = label
             count += 1
-
 
     def prepareBatch(self, batch: dict) -> dict:
         """
@@ -138,7 +127,7 @@ class Trainer:
             processed_input = self.prepareBatch(batch)
             with torch.no_grad():
                 output = self.model(**processed_input)
-            logits = output.logits
+            logits = output["logits"]
             predictions = torch.argmax(logits, dim=-1)
             for (prediction, category, ground_truth) in zip(predictions, batch["category"], processed_input["labels"]):
                 metrics[category].add(prediction=prediction, reference=ground_truth)
@@ -157,7 +146,7 @@ class Trainer:
                 processed_input = self.prepareBatch(batch)
                 with torch.no_grad():
                     output = self.model(**batch)
-                logits = output.logits
+                logits = output["logits"]
                 predictions = torch.argmax(logits, dim=-1)
                 for (prediction, category, ground_truth) in zip(predictions, batch["category"], processed_input["labels"]):
                     metrics_phili[category].add(prediction=prediction, reference=ground_truth)
@@ -192,11 +181,11 @@ class Trainer:
             processed_input = self.prepareBatch(batch)
             with torch.no_grad():
                 output = self.model(**processed_input)
-            logits = output.logits
+            logits = output["logits"]
             predictions = torch.argmax(logits, dim=-1)
             metrics.add_batch(predictions=predictions, references=processed_input["labels"])
         self.model.train()
-        return metrics.compute(), output.loss.item()
+        return metrics.compute(), output["loss"].item()
 
     def trainPatience(self, epochs: dict) -> bool:
         """
@@ -348,11 +337,11 @@ class Trainer:
                 self.optimizer.zero_grad()
 
                 output = self.model(**processed_input)
-                output.loss.backward()
-                running_loss += output.loss.item()
+                output["loss"].backward()
+                running_loss += output["loss"].item()
                 self.optimizer.step()
 
-                logits = output.logits
+                logits = output["logits"]
 
                 predictions = torch.argmax(logits, dim=-1)
                 train_accuracy.add_batch(predictions=predictions, references=processed_input["labels"])

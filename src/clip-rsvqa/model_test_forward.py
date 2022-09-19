@@ -22,35 +22,17 @@ for label in labels:
     id2label[count] = label
     count += 1
 input_processor = CLIPProcessor.from_pretrained("flax-community/clip-rsicd-v2")
-feature_extractor = CLIPFeatureExtractor.from_pretrained("flax-community/clip-rsicd-v2")
-# TODO check if this freezes image feature extractor parameters during training - isto provavelmente sera fazer um for entre os parameters do feature extractor
-feature_extractor.requires_grad = False
-tokenizer = CLIPTokenizer.from_pretrained("flax-community/clip-rsicd-v2")
-clip_model = CLIPModel.from_pretrained("flax-community/clip-rsicd-v2")
+#feature_extractor = CLIPFeatureExtractor.from_pretrained("flax-community/clip-rsicd-v2")
+#tokenizer = CLIPTokenizer.from_pretrained("flax-community/clip-rsicd-v2")
 
-model = CLIPxRSVQA(config=clip_model.config, num_labels=len(label2id), device=device)
-model.text_model = clip_model.text_model
-model.vision_model = clip_model.vision_model
-model.visual_projection = clip_model.visual_projection
-model.text_projection = clip_model.text_projection
-model.logit_scale = clip_model.logit_scale
-
+model = CLIPxRSVQA(num_labels=len(label2id))
 
 model.to(device)  # send model to GPU
-dataset_loader = torch.utils.data.DataLoader(dataset["train"], batch_size=64,
-                                             shuffle=True, num_workers=2)
+dataset_loader = torch.utils.data.DataLoader(dataset["train"], batch_size=2,
+                                             shuffle=False, num_workers=2)
 
 
 def prepareBatch(batch: dict) -> dict:
-    """
-    Prepares batch for model training. Sends batch to GPU. Returns the processed batch.
-
-    Args:
-        batch (dict): Batch given by torch.utils.data.DataLoader.
-
-    Returns:
-        dict: processed batch in GPU, ready to be fed to model.
-    """
     # create training batch
     img_paths = []
     for img_id in batch["img_id"].tolist():
@@ -60,6 +42,8 @@ def prepareBatch(batch: dict) -> dict:
     imgs_to_encode = [Image.open(img) for img in img_paths]
 
     # process the entire batch at once with padding for dynamic padding
+    # processed_batch1 = {**dict(feature_extractor(imgs_to_encode, return_tensors="pt")),
+    #                    **dict(tokenizer(batch["question"], padding=True, return_tensors="pt"))}
     processed_batch = input_processor(
         text=batch["question"], images=imgs_to_encode, padding=True, return_tensors="pt")
     # processed_batch = {**dict(tokenizer(batch["question"], return_tensors="pt", padding=true))}
