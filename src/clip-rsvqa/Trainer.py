@@ -280,7 +280,7 @@ class Trainer:
 
         if self.getBestModel(epochs) == epoch:
             for model in os.listdir(self.log_folder_path):
-                if model.endswith(".pth"):
+                if model.endswith(".pt"):
                     # delete the previous best model
                     os.remove(os.path.join(self.log_folder_path, model))
             file_path = os.path.join(self.log_folder_path, "epoch_" + str(epoch) + "_model.pt")

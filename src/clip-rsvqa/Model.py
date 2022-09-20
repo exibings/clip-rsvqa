@@ -63,8 +63,11 @@ class CLIPxRSVQA(CLIPModel):
         outputs["loss"] = self.loss(outputs["logits"], labels)
         return outputs
 
-    def mean_pooling(self, multimodal_embed, multimodal_mask):
-        return torch.sum(multimodal_embed * multimodal_mask, 1) / torch.clamp(multimodal_mask.sum(1), min=1e-9)
+    def mean_pooling(self, multimodal_embed, multimodal_mask=None):
+        if multimodal_mask == None:
+            return multimodal_embed.mean(dim=1)
+        else:
+            return torch.sum(multimodal_embed * multimodal_mask, 1) / torch.clamp(multimodal_mask.sum(1), min=1e-9)
 
     def create_multimodal_embed_mask(self, text_attention_mask, image_embeds, text_embeds):
         image_embeds_mask = torch.ones(image_embeds.size()).to(self.device)
