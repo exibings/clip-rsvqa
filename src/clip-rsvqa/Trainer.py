@@ -1,10 +1,11 @@
-from datetime import datetime
 import json
 import os
+from datetime import datetime
 from typing import Tuple, Union
 
 import datasets
 import torch
+import wandb
 from PIL import Image
 from tqdm.auto import tqdm
 from transformers import CLIPProcessor
@@ -13,17 +14,16 @@ from Model import CLIPxRSVQA
 
 
 class Trainer:
-    def __init__(self, limit_epochs: int = 25, batch_size: int = 120, patience: int = 3, use_resized_images: bool = False, dataset_name: str = None,
+    def __init__(self, limit_epochs: int = 25, batch_size: int = 120, patience: int = 3, dataset_name: str = None,
                  device: torch.device = torch.device("cpu"), load_model=False, model_path=None) -> None:
+        self.run_name = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         self.limit_epochs = limit_epochs
         self.batch_size = batch_size
         self.patience = patience
-        self.use_resized_images = use_resized_images
         self.dataset_name = dataset_name
         self.device = device
 
-        self.images_path = os.path.join("datasets", dataset_name, "images") if not use_resized_images else os.path.join(
-            "datasets", dataset_name, "images", "resized")
+        self.images_path = os.path.join("datasets", dataset_name, "images")
         self.dataset = datasets.load_from_disk(os.path.join("datasets", dataset_name, "dataset"))
         self.encodeDatasetLabels()
         self.train_loader = torch.utils.data.DataLoader(self.dataset["train"], batch_size=self.batch_size,
@@ -49,8 +49,24 @@ class Trainer:
 
         self.lr = 1e-4
         self.optimizer = torch.optim.AdamW(self.model.parameters(), lr=self.lr)
-        self.lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, "min", patience=1)
+        self.lr_patience = 10
+        self.lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, "min", patience=self.lr_patience)
 
+        config = {
+            "initial_learning_rate": self.lr,
+            "limit epochs": self.limit_epochs,
+            "batch_size": self.batch_size,
+            "dataset": self.dataset_name,
+            "train patience": self.patience,
+            "learning rate patience": self.lr_patience,
+        }
+        if load_model:
+            wandb.init(project="CLIPxRSVQA", job_type="eval",
+                       name=self.run_name, tags=[dataset_name], config=config)
+        else:
+            wandb.init(project="CLIPxRSVQA", job_type="train",
+                       name=self.run_name, tags=[dataset_name], config=config)
+        self.model.freeze_vision()
         self.model.to(self.device)  # send model to GPU
 
     def encodeDatasetLabels(self) -> None:
@@ -121,7 +137,6 @@ class Trainer:
         metrics = {"overall": datasets.load_metric("accuracy")}
         for question_type in list(set(self.dataset["test"]["category"])):
             metrics[str(question_type)] = datasets.load_metric("accuracy")
-
         self.model.eval()
         for batch in self.test_loader:
             processed_input = self.prepareBatch(batch)
@@ -133,6 +148,14 @@ class Trainer:
                 metrics[category].add(prediction=prediction, reference=ground_truth)
                 metrics["overall"].add(prediction=prediction, references=ground_truth)
             progress_bar.update(1)
+        total_accuracy = 0
+        for category in metrics:
+            metrics[category] = metrics[category].compute()
+            wandb.run.summary["test - " + category + " accuracy"] = metrics[category]["accuracy"]
+            if category != "overall":
+                total_accuracy += metrics[category]["accuracy"]
+        metrics["average"] = total_accuracy / (len(metrics) - 1)
+        wandb.run.summary["test - average accuracy"] = metrics["average"]
         progress_bar.close()
 
         if self.dataset_name == "RSVQA-HR":
@@ -153,18 +176,18 @@ class Trainer:
                     metrics_phili["overall"].add(prediction=prediction, references=ground_truth)
                 progress_bar.update(1)
 
-            for category in metrics:
-                metrics[category] = metrics[category].compute()
+            total_accuracy = 0
             for category in metrics_phili:
                 metrics_phili[category] = metrics_phili[category].compute()
+                wandb.run.summary["test phili - " + category + " accuracy"] = metrics_phili[category]["accuracy"]
+                if category != "overall":
+                    total_accuracy += metrics_phili[category]["accuracy"]
+            metrics_phili["average"] = total_accuracy / (len(metrics_phili) - 1)
+            wandb.run.summary["test phili - average accuracy"] = metrics_phili["average"]
+            progress_bar.close()
+
             return metrics, metrics_phili
 
-        total_accuracy = 0
-        for category in metrics:
-            metrics[category] = metrics[category].compute()
-            if category != "overall":
-                total_accuracy += metrics[category]["accuracy"]
-        metrics["average"] = total_accuracy / (len(metrics) - 1)
         return metrics
 
     def validate(self) -> Tuple[dict, float]:
@@ -208,7 +231,7 @@ class Trainer:
         Given a dictionary with the epochs data returns the epoch with the best model (highest validation metrics).
 
         Args:
-            epochs (dict): Dictionary with data related to the training iteration (i.e. accuracies and loss).
+            epochs (dict): Dictionary with the metrics for each training epoch..
 
         Returns:
             int: Epoch with the highest validation accuracy in the given epochs.
@@ -218,10 +241,10 @@ class Trainer:
         else:
             return -1
 
-    def writeLog(self, epochs: dict, file_name: str, training_start_time: datetime) -> dict:
+    def writeLog(self, epochs: dict) -> dict:
         """
         Writes a full log of the training session. Includes the following information:
-            - file name;
+            - run name;
             - dataset;
             - total elapsed time;
             - total number of epochs;
@@ -234,23 +257,20 @@ class Trainer:
 
         Args:
             epochs (dict): Dictionary with the metrics for each training epoch.
-            file_name (str): File name to be used for the log file.
-            training_start_time (datetime): Timestamp of when the training session started.
 
         Returns:
             dict: Dictionary that was writen as a JSON.
         """
 
         log_to_write = {
-            "file name": file_name,
+            "run name": self.run_name,
             "dataset": self.dataset_name,
             "device": torch.cuda.get_device_name(self.device),
-            "total elapsed time": str(datetime.now() - training_start_time).split(".")[0],
+            "total elapsed time": str(datetime.now() - datetime.strptime(self.run_name, "%Y-%m-%d %H:%M:%S")).split(".")[0],
             "total epochs": len(epochs),
             "initial learning rate": self.lr,
             "patience": self.patience,
             "batch size": self.batch_size,
-            "resized images": self.use_resized_images
         }
 
         if self.dataset_name == "RSVQA-HR":
@@ -260,9 +280,10 @@ class Trainer:
 
         log_to_write["best model"] = os.path.join(
             self.log_folder_path, "epoch_" + str(self.getBestModel(epochs)) + "_model.pth")
+        wandb.run.summary["best model"] = log_to_write["best model"]
         log_to_write["epochs"] = epochs
 
-        with open(os.path.join(self.log_folder_path, file_name + ".json"), "w") as log_file:
+        with open(os.path.join(self.log_folder_path, self.run_name.replace(" ", "_").replace(":", "_").replace("-", "_") + ".json"), "w") as log_file:
             json.dump(log_to_write, log_file, indent=4)
 
         return log_to_write
@@ -287,34 +308,29 @@ class Trainer:
             torch.save({"label2id": self.label2id, "id2label": self.id2label,
                        "model_state_dict": self.model.state_dict()}, file_path)
 
-    def saveTrain(self, epochs: dict, training_start_time: datetime) -> None:
+    def saveTrain(self, epochs: dict) -> None:
         """
         Saves the complete log of the training, including the best model.
 
         Args:
-            log (dict): Dictionary with all the information relevant to the training.
-            training_start_time (datetime): Timestamp of when the training started.
+            epochs (dict): Dictionary with all the information relevant to the training.
         """
-        timestamp = training_start_time.strftime("%Y-%m-%d %H:%M:%S")
-        timestamp = timestamp.replace(" ", "_").replace(":", "_").replace("-", "_")
 
         # save the best model and write the logs
         print("Completed model training in",
-              self.writeLog(epochs, timestamp, training_start_time)["total elapsed time"])
+              self.writeLog(epochs)["total elapsed time"])
 
     def train(self) -> None:
         """
         Training loop.
         The training loop has two different stop conditions:
             1) a limit of epochs is reached;
-
             2) if the interval of epochs between the highest validation accuracy and current epoch is higher than a threshold (default is 3).
             If the threshold value is 0 this stop condition is ignored.
         Once the training loop is complete a log is saved.
         """
         # create log folder for the training session
-        training_start_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        self.log_folder_path = os.path.join("logs", self.dataset_name, training_start_time.replace(
+        self.log_folder_path = os.path.join("logs", self.dataset_name, self.run_name.replace(
             " ", "_").replace(":", "_").replace("-", "_"))
         os.makedirs(self.log_folder_path)
 
@@ -327,7 +343,9 @@ class Trainer:
             print(epoch_start_time.strftime("%Y-%m-%d %H:%M:%S"), "- Started epoch", epoch_count)
             epoch_progress = tqdm(range(len(self.train_loader)))
             running_loss = 0.0
-            train_accuracy = datasets.load_metric("accuracy")
+            train_metrics = {"overall": datasets.load_metric("accuracy")}
+            for question_type in list(set(self.dataset["train"]["category"])):
+                train_metrics[str(question_type)] = datasets.load_metric("accuracy")
             epochs[epoch_count] = {}
 
             # train
@@ -344,24 +362,39 @@ class Trainer:
                 logits = output["logits"]
 
                 predictions = torch.argmax(logits, dim=-1)
-                train_accuracy.add_batch(predictions=predictions, references=processed_input["labels"])
+                for (prediction, category, ground_truth) in zip(predictions, batch["category"], processed_input["labels"]):
+                    train_metrics[category].add(prediction=prediction, reference=ground_truth)
+                    train_metrics["overall"].add(prediction=prediction, references=ground_truth)
                 epoch_progress.update(1)
 
             # current training loss and accuracy for the epoch
+            to_log = {"epochs": epoch_count}
             epoch_finish_time = datetime.now()
-            epochs[epoch_count]["learning rate"] = self.lr_scheduler.optimizer.param_groups[0]["lr"]
-            epochs[epoch_count]["train metrics"] = train_accuracy.compute()
-            epochs[epoch_count]["train loss"] = running_loss/len(self.train_loader)
+            to_log["learning rate"] = epochs[epoch_count]["learning rate"] = self.lr_scheduler.optimizer.param_groups[0]["lr"]
+
+            for category in train_metrics:
+                train_metrics[category] = train_metrics[category].compute()
+                to_log["train - " + category + " accuracy"] = train_metrics[category]["accuracy"]
+            epochs[epoch_count]["train metrics"] = train_metrics
+
+            to_log["train - loss"] = epochs[epoch_count]["train loss"] = running_loss/len(self.train_loader)
+
             # validate the training epoch
             epochs[epoch_count]["validation metrics"], epochs[epoch_count]["validation loss"] = self.validate()
+            to_log["validation - overall accuracy"] = epochs[epoch_count]["validation metrics"]["accuracy"]
+            to_log["validation - loss"] = epochs[epoch_count]["validation loss"]
+
             epochs[epoch_count]["elapsed time"] = str((epoch_finish_time - epoch_start_time)).split(".")[0]
+
             # save the model state if this epoch has the current best model
             self.saveModel(epoch_count, epochs)
+
             # update learning rate
             self.lr_scheduler.step(epochs[epoch_count]["validation loss"])
+            wandb.log(to_log)
 
             epoch_progress.close()
             print(epoch_finish_time.strftime("%Y-%m-%d %H:%M:%S"), "- Finished epoch", epoch_count)
             epoch_count += 1
 
-        self.saveTrain(epochs, datetime.strptime(training_start_time, "%Y-%m-%d %H:%M:%S"))
+        self.saveTrain(epochs)

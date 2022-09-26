@@ -4,3 +4,4 @@ logs/RSVQA-LR/*
 logs/RSVQAxBEN/*
 src/clip-rsvqa/__pycache__
 src/preprocessing/__pycache__
+wandb/*

@@ -22,6 +22,7 @@ class CLIPxRSVQA(CLIPModel):
     def forward(self, input_ids=None, pixel_values=None, attention_mask=None, position_ids=None, labels=None):
         outputs = {}
 
+        # quando for os 4 patches apenas chamar 4 vezes o CLIP image
         vision_outputs = self.vision_model(
             pixel_values=pixel_values,
             output_attentions=False,
@@ -37,14 +38,13 @@ class CLIPxRSVQA(CLIPModel):
             output_hidden_states=True,
             return_dict=True,
         )
-        # quando for os 4 patches apenas chamar 4 vezes o CLIP image
 
         image_embeds = vision_outputs.last_hidden_state  # vision_outputs['last_hidden_state']
         image_embeds = self.visual_projection(image_embeds)  # size: [batch_size, 50, 512]
         text_embeds = text_outputs.last_hidden_state  # text_outputs['last_hidden_state']
         text_embeds = self.text_projection(text_embeds)  # size: [batch_size, sequence_length, 512]
 
-        # normalized features
+        # normalize features
         text_embeds = text_embeds / text_embeds.norm(p=2, dim=-1, keepdim=True)
         image_embeds = image_embeds / image_embeds.norm(p=2, dim=-1, keepdim=True)
 
@@ -75,3 +75,7 @@ class CLIPxRSVQA(CLIPModel):
         multimodal_embed_mask = torch.cat((image_embeds_mask, text_embeds_mask),
                                           dim=1)  # size: [batch_size, 50+sequence_length, 512]
         return multimodal_embed_mask
+
+    def freeze_vision(self):
+        for param in self.vision_model.parameters():
+            param.requires_grade = False
