@@ -14,7 +14,7 @@ from Model import CLIPxRSVQA
 
 
 class Trainer:
-    def __init__(self, limit_epochs: int = 25, batch_size: int = 120, patience: int = 3, dataset_name: str = None,
+    def __init__(self, limit_epochs: int = 100, batch_size: int = 80, patience: int = 20, lr_patience: int = 10, dataset_name: str = None,
                  device: torch.device = torch.device("cpu"), load_model=False, model_path=None) -> None:
         self.run_name = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         self.limit_epochs = limit_epochs
@@ -41,15 +41,11 @@ class Trainer:
         self.model = CLIPxRSVQA(num_labels=len(self.label2id))
 
         if load_model:
-            loaded_data = torch.load(model_path)
-            self.model.load_state_dict(loaded_data["model_state_dict"])
-            self.id2label = loaded_data["id2label"]
-            self.label2id = loaded_data["label2id"]
-            print("A model has been loaded from file", model_path)
+            self.load_model(model_path)
 
         self.lr = 1e-4
         self.optimizer = torch.optim.AdamW(self.model.parameters(), lr=self.lr)
-        self.lr_patience = 10
+        self.lr_patience = lr_patience
         self.lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, "min", patience=self.lr_patience)
 
         config = {
@@ -69,13 +65,29 @@ class Trainer:
         self.model.freeze_vision()
         self.model.to(self.device)  # send model to GPU
 
+    def load_model(self, model_path: str) -> None:
+        """
+        Loads the model weights and label encodings from .pt file
+
+        Args:
+            model_path (str): Path to the model.pt file
+        """
+        loaded_data = torch.load(model_path)
+        self.model.load_state_dict(loaded_data["model_state_dict"])
+        self.id2label = loaded_data["id2label"]
+        self.label2id = loaded_data["label2id"]
+        print("A model has been loaded from file", model_path)
+
     def encodeDatasetLabels(self) -> None:
         """
         Create translation dictionaries for the labels from the dataset.
 
         Translates the labels from text to an id - from 1 to N, where N is the number of possible labels in the dataset.
         """
-        self.labels = list(set(self.dataset["train"]["answer"]))
+        self.labels = set(self.dataset["train"]["answer"]).union(
+            self.dataset["validation"]["answer"]).union(self.dataset["test"]["answer"])
+        if self.dataset_name == "RSVQA-HR":
+            self.labels.update(self.dataset["test_phili"]["answer"])
         self.label2id = {}
         self.id2label = {}
         count = 0
@@ -272,15 +284,15 @@ class Trainer:
             "patience": self.patience,
             "batch size": self.batch_size,
         }
+        log_to_write["best model"] = os.path.join(
+            self.log_folder_path, "epoch_" + str(self.getBestModel(epochs)) + "_model.pt")
 
+        self.load_model(log_to_write["best model"])
         if self.dataset_name == "RSVQA-HR":
             log_to_write["test metrics"], log_to_write["test phili metrics"] = self.test()
         else:
             log_to_write["test metrics"] = self.test()
 
-        log_to_write["best model"] = os.path.join(
-            self.log_folder_path, "epoch_" + str(self.getBestModel(epochs)) + "_model.pth")
-        wandb.run.summary["best model"] = log_to_write["best model"]
         log_to_write["epochs"] = epochs
 
         with open(os.path.join(self.log_folder_path, self.run_name.replace(" ", "_").replace(":", "_").replace("-", "_") + ".json"), "w") as log_file:
@@ -305,6 +317,7 @@ class Trainer:
                     # delete the previous best model
                     os.remove(os.path.join(self.log_folder_path, model))
             file_path = os.path.join(self.log_folder_path, "epoch_" + str(epoch) + "_model.pt")
+            wandb.run.summary["best model"] = file_path
             torch.save({"label2id": self.label2id, "id2label": self.id2label,
                        "model_state_dict": self.model.state_dict()}, file_path)
 
