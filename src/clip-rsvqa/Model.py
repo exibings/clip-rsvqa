@@ -78,4 +78,4 @@ class CLIPxRSVQA(CLIPModel):
 
     def freeze_vision(self):
         for param in self.vision_model.parameters():
-            param.requires_grade = False
+            param.requires_grad = False
