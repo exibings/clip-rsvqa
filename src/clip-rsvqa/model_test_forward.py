@@ -13,7 +13,7 @@ img_folder = os.path.join("datasets", "RSVQA-LR", "images")
 dataset = datasets.load_from_disk(os.path.join("datasets", "RSVQA-LR", "dataset"))
 
 # encode labels
-labels = list(set(dataset["train"]["answer"]))
+labels = set(dataset["train"]["answer"]).union(dataset["validation"]["answer"]).union(dataset["test"]["answer"])
 label2id = {}
 id2label = {}
 count = 0

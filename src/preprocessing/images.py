@@ -1,5 +1,4 @@
 import os
-
 from PIL import Image
 
 
@@ -67,7 +66,7 @@ def imageResizer(dataset_name: str, imageSize: int = 224) -> None:
     else:
         # total image checker
         img_list = os.listdir(os.path.join("datasets", dataset_name, "images"))
-        print("total images", len(img_list))
+        print("total images", len(img_list) - 1)
         already_resized = os.listdir(os.path.join("datasets", dataset_name, "images", "resized"))
         print("already resized", len(already_resized))
 

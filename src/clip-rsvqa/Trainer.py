@@ -14,7 +14,7 @@ from Model import CLIPxRSVQA
 
 
 class Trainer:
-    def __init__(self, limit_epochs: int = 100, batch_size: int = 80, patience: int = 20, lr_patience: int = 10, dataset_name: str = None,
+    def __init__(self, limit_epochs: int = 100, batch_size: int = 80, patience: int = 20, lr_patience: int = 10, freeze: bool = True, dataset_name: str = None,
                  device: torch.device = torch.device("cpu"), load_model=False, model_path=None) -> None:
         self.run_name = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         self.limit_epochs = limit_epochs
@@ -47,6 +47,7 @@ class Trainer:
         self.optimizer = torch.optim.AdamW(self.model.parameters(), lr=self.lr)
         self.lr_patience = lr_patience
         self.lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, "min", patience=self.lr_patience)
+        self.freeze = freeze
 
         config = {
             "initial_learning_rate": self.lr,
@@ -55,14 +56,18 @@ class Trainer:
             "dataset": self.dataset_name,
             "train patience": self.patience,
             "learning rate patience": self.lr_patience,
+            "freeze CLIP Vision": self.freeze
         }
+
+        if self.freeze:
+            self.model.freeze_vision()
+
         if load_model:
             wandb.init(project="CLIPxRSVQA", job_type="eval",
-                       name=self.run_name, tags=[dataset_name], config=config)
+                       name=self.run_name, config=config)
         else:
             wandb.init(project="CLIPxRSVQA", job_type="train",
-                       name=self.run_name, tags=[dataset_name], config=config)
-        self.model.freeze_vision()
+                       name=self.run_name, config=config)
         self.model.to(self.device)  # send model to GPU
 
     def load_model(self, model_path: str) -> None:
