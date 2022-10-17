@@ -5,3 +5,4 @@ logs/RSVQAxBEN/*
 src/clip-rsvqa/__pycache__
 src/preprocessing/__pycache__
 wandb/*
+src/clip-rsvqa/Models/__pycache__

@@ -3,19 +3,20 @@ import os
 from datetime import datetime
 from typing import Tuple, Union
 
+import h5py
 import datasets
 import torch
 import wandb
-from PIL import Image
+from H5Dataset import H5Dataset
 from tqdm.auto import tqdm
+from torch.nn import CrossEntropyLoss
 from transformers import CLIPFeatureExtractor, CLIPTokenizer
-
-from Model import CLIPxRSVQA
+from torch.profiler import profile, record_function, ProfilerActivity
 
 
 class Trainer:
     def __init__(self, limit_epochs: int = 100, batch_size: int = 80, patience: int = 20, lr_patience: int = 10, freeze: bool = True, dataset_name: str = None,
-                 device: torch.device = torch.device("cpu"), load_model=False, model_path=None) -> None:
+                 device: torch.device = torch.device("cpu"), load_model: bool = False, model_path: str = None, model: str = None) -> None:
         self.run_name = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         self.limit_epochs = limit_epochs
         self.batch_size = batch_size
@@ -23,41 +24,66 @@ class Trainer:
         self.dataset_name = dataset_name
         self.device = device
 
-        self.images_path = os.path.join("datasets", dataset_name, "images")
-        self.dataset = datasets.load_from_disk(os.path.join("datasets", dataset_name, "dataset"))
-        self.encodeDatasetLabels()
-        self.train_loader = torch.utils.data.DataLoader(self.dataset["train"], batch_size=self.batch_size,
-                                                        shuffle=True, num_workers=2)
+        if self.dataset_name == "RSVQA-LR":
+            self.train_dataset = H5Dataset(os.path.join("datasets", "RSVQA-LR", "rsvqa_lr.h5"), "train", model)
+            self.train_loader = torch.utils.data.DataLoader(self.train_dataset, batch_size=self.batch_size,
+                                                            shuffle=True, num_workers=4)
+            self.validation_dataset = H5Dataset(os.path.join("datasets", "RSVQA-LR", "rsvqa_lr.h5"), "validation", model)
+            self.validation_loader = torch.utils.data.DataLoader(self.validation_dataset, batch_size=self.batch_size,
+                                                                shuffle=False, num_workers=4)
+            self.test_dataset = H5Dataset(os.path.join("datasets", "RSVQA-LR", "rsvqa_lr.h5"), "test", model)
+            self.test_loader = torch.utils.data.DataLoader(self.test_dataset, batch_size=self.batch_size,
+                                                        shuffle=False, num_workers=4)
+            self.id2label = json.load(open(os.path.join("datasets", "RSVQA-LR", "rsvqa_lr_id2label.json"), "r"))
+            self.label2id = json.load(open(os.path.join("datasets", "RSVQA-LR", "rsvqa_lr_label2id.json"), "r"))
 
-        self.test_loader = torch.utils.data.DataLoader(self.dataset["test"], batch_size=self.batch_size,
-                                                       shuffle=False, num_workers=2)
-        if dataset_name == "RSVQA-HR":
-            self.test_phili_loader = torch.utils.data.DataLoader(self.dataset["test_phili"], batch_size=self.batch_size,
-                                                                 shuffle=False, num_workers=2)
-        self.validation_loader = torch.utils.data.DataLoader(self.dataset["validation"], batch_size=self.batch_size,
-                                                             shuffle=False, num_workers=2)
+        elif self.dataset_name == "RSVQA-HR":
+            self.train_dataset = H5Dataset(os.path.join("datasets", "RSVQA-HR", "rsvqa_hr.h5"), "train", model)
+            self.train_loader = torch.utils.data.DataLoader(self.train_dataset, batch_size=self.batch_size,
+                                                            shuffle=True, num_workers=4)
+            self.validation_dataset = H5Dataset(os.path.join(
+                "datasets", "RSVQA-HR", "rsvqa_hr.h5"), "validation", model)
+            self.validation_loader = torch.utils.data.DataLoader(self.validation_dataset, batch_size=self.batch_size,
+                                                                 shuffle=False, num_workers=4)
+            self.test_dataset = H5Dataset(os.path.join("datasets", "RSVQA-HR", "rsvqa_hr.h5"), "test", model)
+            self.test_loader = torch.utils.data.DataLoader(self.test_dataset, batch_size=self.batch_size,
+                                                           shuffle=False, num_workers=4)
+            self.test_phili_dataset = H5Dataset(os.path.join("datasets", "RSVQA-HR", "rsvqa_hr.h5"), "test_phili", model)
+            self.test_phili_loader = torch.utils.data.DataLoader(self.test_phili_dataset, batch_size=self.batch_size,
+                                                           shuffle=False, num_workers=4)
+            self.id2label = json.load(open(os.path.join("datasets", "RSVQA-HR", "rsvqa_hr_id2label.json"), "r"))
+            self.label2id = json.load(open(os.path.join("datasets", "RSVQA-HR", "rsvqa_hr_label2id.json"), "r"))
+        
+        elif self.dataset_name == "RSVQAxBEN":
+            #TODO
+            pass
 
-        self.feature_extractor = CLIPFeatureExtractor.from_pretrained("flax-community/clip-rsicd-v2")
-        self.tokenizer = CLIPTokenizer.from_pretrained("flax-community/clip-rsicd-v2")
+        if model == "baseline":
+            from Models.Baseline import CLIPxRSVQA
+        elif model == "patching":
+            from Models.Patching import CLIPxRSVQA
         self.model = CLIPxRSVQA(num_labels=len(self.label2id))
-
+        self.model.name = model
         if load_model:
             self.load_model(model_path)
 
         self.lr = 1e-4
         self.optimizer = torch.optim.AdamW(self.model.parameters(), lr=self.lr)
         self.lr_patience = lr_patience
-        self.lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, "min", patience=self.lr_patience)
+        self.lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+            self.optimizer, "max", patience=self.lr_patience)
+        self.loss_fcn = CrossEntropyLoss()
         self.freeze = freeze
 
-        config = {
+        wandb_config = {
             "initial_learning_rate": self.lr,
             "limit epochs": self.limit_epochs,
             "batch_size": self.batch_size,
             "dataset": self.dataset_name,
             "train patience": self.patience,
             "learning rate patience": self.lr_patience,
-            "freeze CLIP Vision": self.freeze
+            "freeze CLIP Vision": self.freeze,
+            "model": model
         }
 
         if self.freeze:
@@ -65,10 +91,10 @@ class Trainer:
 
         if load_model:
             wandb.init(project="CLIPxRSVQA", job_type="eval",
-                       name=self.run_name, config=config)
+                       name=self.run_name, config=wandb_config)
         else:
             wandb.init(project="CLIPxRSVQA", job_type="train",
-                       name=self.run_name, config=config)
+                       name=self.run_name, config=wandb_config)
         self.model.to(self.device)  # send model to GPU
 
     def load_model(self, model_path: str) -> None:
@@ -84,73 +110,6 @@ class Trainer:
         self.label2id = loaded_data["label2id"]
         print("A model has been loaded from file", model_path)
 
-    def encodeDatasetLabels(self) -> None:
-        """
-        Create translation dictionaries for the labels from the dataset.
-
-        Translates the labels from text to an id - from 1 to N, where N is the number of possible labels in the dataset.
-        """
-        self.labels = set(self.dataset["train"]["answer"]).union(
-            self.dataset["validation"]["answer"]).union(self.dataset["test"]["answer"])
-        if self.dataset_name == "RSVQA-HR":
-            self.labels.update(self.dataset["test_phili"]["answer"])
-        self.label2id = {}
-        self.id2label = {}
-        count = 0
-        for label in self.labels:
-            self.label2id[label] = count
-            self.id2label[count] = label
-            count += 1
-
-    def patchImage(self, img_path: str) -> list:
-        """
-        Patches the image and returns the patches and original image
-
-        Args:
-            img_path (str): Path to the image to be patched
-
-        Returns:
-            list: list with the 4 patches generated from the image and the original image
-        """
-        img = Image.open(img_path)
-        return [img.crop((0, 0, img.width//2, img.height//2)), img.crop((img.width//2, 0, img.width, img.height//2)),
-                img.crop((0, img.height//2, img.width//2, img.height)), img.crop((img.width//2, img.height//2, img.width, img.height)), img]
-
-    def prepareBatch(self, batch: dict) -> dict:
-        """
-        Prepares batch to feed the model. Sends batch to GPU. Returns the processed batch.
-
-        Args:
-            batch (dict): Dataset batch given by torch.utils.data.DataLoader
-
-        Returns:
-            dict: {"labels": tensor with #batch_size elements,
-                    "pixel_values": tensor with the pixel values for all the images and respective patches needed for the batch. [n_patches+1=5, batch_size, n_channels=3, height=224, width=224],
-                    "input_ids": tesnor with the encoded questions. #batch_size elements,
-                    "attention_mask": tensor with the attention masks for each question. #batch_size elements}
-        """
-        # create training batch
-        processed_input = {}
-        processed_imgs = {}
-        for img_id in batch["img_id"].tolist():
-            if os.path.exists(os.path.join(self.images_path, str(img_id) + ".jpg")):
-                if img_id not in processed_imgs:
-                    processed_imgs[img_id] = self.feature_extractor(self.patchImage(os.path.join(self.images_path, str(
-                        img_id) + ".jpg")), return_tensors="pt", resample=Image.Resampling.BILINEAR)
-                    # print(processed_imgs[img_id])
-                if "pixel_values" not in processed_input:
-                    processed_input["pixel_values"] = processed_imgs[img_id]["pixel_values"]
-                else:
-                    processed_input["pixel_values"] = torch.stack(
-                        (processed_input["pixel_values"], processed_imgs[img_id]["pixel_values"]), dim=1)
-
-        processed_input.update({"labels": torch.tensor([self.label2id[label] for label in batch["answer"]]),
-                                **self.tokenizer(batch["question"], padding=True, return_tensors="pt")})
-        # send tensors to GPU
-        for key in processed_input:
-            processed_input[key] = processed_input[key].to(self.device)
-        return processed_input
-
     def test(self) -> Union[dict, tuple]:
         """
         Evaluates the trainer's model performance (accuracy) with the test dataset.
@@ -164,22 +123,24 @@ class Trainer:
         """
         print("Computing metrics for test dataset")
 
-        progress_bar = tqdm(range(len(self.test_loader)))
         metrics = {"overall": datasets.load_metric("accuracy")}
-        for question_type in list(set(self.dataset["test"]["category"])):
+        for question_type in self.test_dataset.categories:
             metrics[str(question_type)] = datasets.load_metric("accuracy")
         self.model.eval()
+
+        progress_bar = tqdm(range(len(self.test_loader)))
         for batch in self.test_loader:
-            processed_input = self.prepareBatch(batch)
+            batch = self.batchToGPU(batch)
             with torch.no_grad():
-                output = self.model(**processed_input)
-            logits = output["logits"]
+                logits = self.model(input_ids=batch["input_ids"], attention_mask=batch["attention_mask"], pixel_values=batch["pixel_values"])
             predictions = torch.argmax(logits, dim=-1)
-            for (prediction, category, ground_truth) in zip(predictions, batch["category"], processed_input["labels"]):
+            for (prediction, category, ground_truth) in zip(predictions, batch["category"], batch["label"]):
                 metrics[category].add(prediction=prediction, reference=ground_truth)
                 metrics["overall"].add(prediction=prediction, references=ground_truth)
             progress_bar.update(1)
         total_accuracy = 0
+        progress_bar.close()
+        
         for category in metrics:
             metrics[category] = metrics[category].compute()
             wandb.run.summary["test - " + category + " accuracy"] = metrics[category]["accuracy"]
@@ -187,35 +148,33 @@ class Trainer:
                 total_accuracy += metrics[category]["accuracy"]
         metrics["average"] = total_accuracy / (len(metrics) - 1)
         wandb.run.summary["test - average accuracy"] = metrics["average"]
-        progress_bar.close()
 
         if self.dataset_name == "RSVQA-HR":
             print("Computing metrics for test Philadelphia dataset")
-
-            progress_bar = tqdm(range(len(self.test_phili_loader)))
             metrics_phili = {"overall": datasets.load_metric("accuracy")}
-            for question_type in list(set(self.dataset["test"]["category"])):
+            for question_type in self.test_phili_dataset.categories:
                 metrics_phili[str(question_type)] = datasets.load_metric("accuracy")
+            
+            progress_bar = tqdm(range(len(self.test_loader)))
             for batch in self.test_phili_loader:
-                processed_input = self.prepareBatch(batch)
+                batch = self.batchToGPU(batch)
                 with torch.no_grad():
-                    output = self.model(**batch)
-                logits = output["logits"]
+                    logits = self.model(input_ids=batch["input_ids"], attention_mask=batch["attention_mask"], pixel_values=batch["pixel_values"])
                 predictions = torch.argmax(logits, dim=-1)
-                for (prediction, category, ground_truth) in zip(predictions, batch["category"], processed_input["labels"]):
+                for (prediction, category, ground_truth) in zip(predictions, batch["category"], batch["label"]):
                     metrics_phili[category].add(prediction=prediction, reference=ground_truth)
                     metrics_phili["overall"].add(prediction=prediction, references=ground_truth)
                 progress_bar.update(1)
-
             total_accuracy = 0
+            progress_bar.close()
+            
             for category in metrics_phili:
                 metrics_phili[category] = metrics_phili[category].compute()
                 wandb.run.summary["test phili - " + category + " accuracy"] = metrics_phili[category]["accuracy"]
                 if category != "overall":
                     total_accuracy += metrics_phili[category]["accuracy"]
             metrics_phili["average"] = total_accuracy / (len(metrics_phili) - 1)
-            wandb.run.summary["test phili - average accuracy"] = metrics_phili["average"]
-            progress_bar.close()
+            wandb.run.summary["test phili- average accuracy"] = metrics_phili["average"]
 
             return metrics, metrics_phili
 
@@ -226,24 +185,26 @@ class Trainer:
         Evaluates the trainer's model performance (accuracy) with the given validation dataset.
 
         Returns:
-            Tuple[dict, float]: Tuple with a dictionary with the performance metrics (accuracy) for the trainer's model with the validation dataset 
+            Tuple[dict, float]: Tuple with a dictionary with the performance metrics (accuracy) for the trainer's model with the validation dataset
             and the validation loss.
         """
+        print("\tgoing to validate data")
         metrics = datasets.load_metric("accuracy")
         self.model.eval()
-        for batch in self.validation_loader:
-            processed_input = self.prepareBatch(batch)
-            with torch.no_grad():
-                output = self.model(**processed_input)
-            logits = output["logits"]
-            predictions = torch.argmax(logits, dim=-1)
-            metrics.add_batch(predictions=predictions, references=processed_input["labels"])
+        running_loss = 0.0
+        with torch.no_grad():
+            for batch in self.validation_loader:
+                batch = self.batchToGPU(batch)
+                logits = self.model(input_ids=batch["input_ids"], attention_mask=batch["attention_mask"], pixel_values=batch["pixel_values"])
+                running_loss += self.loss_fcn(logits, batch["label"])
+                predictions = torch.argmax(logits, dim=-1)
+                metrics.add_batch(predictions=predictions, references=batch["label"])
         self.model.train()
-        return metrics.compute(), output["loss"].item()
+        return metrics.compute(), running_loss/len(self.validation_loader)
 
     def trainPatience(self, epochs: dict) -> bool:
         """
-        Checks if the best model during training was achieved or not. If the patience is 0, patience check is ignored. 
+        Checks if the best model during training was achieved or not. If the patience is 0, patience check is ignored.
 
         Args:
             epochs (int): Number of epochs that already happened during training.
@@ -271,6 +232,14 @@ class Trainer:
             return max(epochs, key=lambda epoch: epochs[epoch]["validation metrics"]["accuracy"])
         else:
             return -1
+
+    def batchToGPU(self, batch: dict) -> dict:
+        batch.update({"input_ids": batch["input_ids"].to(self.device, non_blocking=True),
+                    "attention_mask": batch["attention_mask"].to(self.device, non_blocking=True),
+                    "pixel_values": batch["pixel_values"].to(self.device, non_blocking=True),
+                    "label": batch["label"].to(self.device, non_blocking=True)
+                    })
+        return batch
 
     def writeLog(self, epochs: dict) -> dict:
         """
@@ -329,7 +298,7 @@ class Trainer:
         Returns:
             str: path of the saved model file.
         """
-
+        print("\tgoing to save model")
         if self.getBestModel(epochs) == epoch:
             for model in os.listdir(self.log_folder_path):
                 if model.endswith(".pt"):
@@ -347,7 +316,7 @@ class Trainer:
         Args:
             epochs (dict): Dictionary with all the information relevant to the training.
         """
-
+        print("\tgoing to save train")
         # save the best model and write the logs
         print("Completed model training in",
               self.writeLog(epochs)["total elapsed time"])
@@ -361,72 +330,69 @@ class Trainer:
             If the threshold value is 0 this stop condition is ignored.
         Once the training loop is complete a log is saved.
         """
-        # create log folder for the training session
-        self.log_folder_path = os.path.join("logs", self.dataset_name, self.run_name.replace(
-            " ", "_").replace(":", "_").replace("-", "_"))
-        os.makedirs(self.log_folder_path)
+        with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA]) as prof:
 
-        epochs = {}
-        epoch_count = 1
+            # create log folder for the training session
+            self.log_folder_path = os.path.join("logs", self.dataset_name, self.run_name.replace(
+                " ", "_").replace(":", "_").replace("-", "_"))
+            os.makedirs(self.log_folder_path)
 
-        # training loop
-        while epoch_count <= self.limit_epochs and self.trainPatience(epochs):
-            epoch_start_time = datetime.now()
-            print(epoch_start_time.strftime("%Y-%m-%d %H:%M:%S"), "- Started epoch", epoch_count)
-            epoch_progress = tqdm(range(len(self.train_loader)))
-            running_loss = 0.0
-            train_metrics = {"overall": datasets.load_metric("accuracy")}
-            for question_type in list(set(self.dataset["train"]["category"])):
-                train_metrics[str(question_type)] = datasets.load_metric("accuracy")
-            epochs[epoch_count] = {}
+            epochs = {}
+            epoch_count = 1
 
-            # train
-            for batch in self.train_loader:
-                # encode batch and feed it to model
-                processed_input = self.prepareBatch(batch)
-                self.optimizer.zero_grad()
+            # training loop
+            while epoch_count <= self.limit_epochs and self.trainPatience(epochs):
+                epoch_start_time = datetime.now()
+                print(epoch_start_time.strftime("%Y-%m-%d %H:%M:%S"), "- Started epoch", epoch_count)
+                running_loss = 0.0
+                train_metrics = {"overall": datasets.load_metric("accuracy")}
+                for question_type in self.train_dataset.categories:
+                    train_metrics[str(question_type)] = datasets.load_metric("accuracy")
+                epochs[epoch_count] = {}
 
-                output = self.model(**processed_input)
-                output["loss"].backward()
-                running_loss += output["loss"].item()
-                self.optimizer.step()
+                epoch_progress = tqdm(range(len(self.train_loader)))
+                # train
+                for batch in self.train_loader:
+                    batch = self.batchToGPU(batch)
+                    self.optimizer.zero_grad(set_to_none=True)
+                    logits = self.model(input_ids=batch["input_ids"], attention_mask = batch["attention_mask"], pixel_values=batch["pixel_values"])
+                    loss = self.loss_fcn(logits, batch["label"])
+                    loss.backward()
+                    running_loss += loss
+                    self.optimizer.step()
+                    predictions = torch.argmax(logits, dim=-1)
+                    for (prediction, category, ground_truth) in zip(predictions, batch["category"], batch["label"]):
+                        train_metrics[category].add(prediction=prediction, reference=ground_truth)
+                        train_metrics["overall"].add(prediction=prediction, references=ground_truth)
+                    epoch_progress.update(1)
 
-                logits = output["logits"]
+                # current training loss and accuracy for the epoch
+                to_log = {"epochs": epoch_count}
+                epoch_finish_time = datetime.now()
+                to_log["learning rate"] = epochs[epoch_count]["learning rate"] = self.lr_scheduler.optimizer.param_groups[0]["lr"]
 
-                predictions = torch.argmax(logits, dim=-1)
-                for (prediction, category, ground_truth) in zip(predictions, batch["category"], processed_input["labels"]):
-                    train_metrics[category].add(prediction=prediction, reference=ground_truth)
-                    train_metrics["overall"].add(prediction=prediction, references=ground_truth)
-                epoch_progress.update(1)
+                for category in train_metrics:
+                    train_metrics[category] = train_metrics[category].compute()
+                    to_log["train - " + category + " accuracy"] = train_metrics[category]["accuracy"]
+                epochs[epoch_count]["train metrics"] = train_metrics
 
-            # current training loss and accuracy for the epoch
-            to_log = {"epochs": epoch_count}
-            epoch_finish_time = datetime.now()
-            to_log["learning rate"] = epochs[epoch_count]["learning rate"] = self.lr_scheduler.optimizer.param_groups[0]["lr"]
+                to_log["train - loss"] = epochs[epoch_count]["train loss"] = running_loss/len(self.train_loader)
 
-            for category in train_metrics:
-                train_metrics[category] = train_metrics[category].compute()
-                to_log["train - " + category + " accuracy"] = train_metrics[category]["accuracy"]
-            epochs[epoch_count]["train metrics"] = train_metrics
+                # validate the training epoch
+                epochs[epoch_count]["validation metrics"], epochs[epoch_count]["validation loss"] = self.validate()
+                print("validation complete")
+                to_log["validation - overall accuracy"] = epochs[epoch_count]["validation metrics"]["accuracy"]
+                to_log["validation - loss"] = epochs[epoch_count]["validation loss"]
 
-            to_log["train - loss"] = epochs[epoch_count]["train loss"] = running_loss/len(self.train_loader)
+                epochs[epoch_count]["elapsed time"] = str((epoch_finish_time - epoch_start_time)).split(".")[0]
 
-            # validate the training epoch
-            epochs[epoch_count]["validation metrics"], epochs[epoch_count]["validation loss"] = self.validate()
-            to_log["validation - overall accuracy"] = epochs[epoch_count]["validation metrics"]["accuracy"]
-            to_log["validation - loss"] = epochs[epoch_count]["validation loss"]
+                # save the model state if this epoch has the current best model
+                self.saveModel(epoch_count, epochs)
+                # update learning rate
+                self.lr_scheduler.step(epochs[epoch_count]["validation accuracy"])
+                wandb.log(to_log)
 
-            epochs[epoch_count]["elapsed time"] = str((epoch_finish_time - epoch_start_time)).split(".")[0]
-
-            # save the model state if this epoch has the current best model
-            self.saveModel(epoch_count, epochs)
-
-            # update learning rate
-            self.lr_scheduler.step(epochs[epoch_count]["validation loss"])
-            wandb.log(to_log)
-
-            epoch_progress.close()
-            print(epoch_finish_time.strftime("%Y-%m-%d %H:%M:%S"), "- Finished epoch", epoch_count)
-            epoch_count += 1
-
-        self.saveTrain(epochs)
+                epoch_progress.close()
+                print(epoch_finish_time.strftime("%Y-%m-%d %H:%M:%S"), "- Finished epoch", epoch_count)
+                epoch_count += 1
+            self.saveTrain(epochs)

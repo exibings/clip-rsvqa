@@ -17,4 +17,6 @@ dependencies:
   - spacy
   - ftfy
   - wandb
+  - h5py
+  - pytables
 prefix: /cfs/home/u121165/anaconda3/envs/ist-thesis
