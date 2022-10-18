@@ -32,7 +32,6 @@ args = {"limit_epochs": args.epochs,
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 args["device"] = device
-
 trainer = Trainer(**args)
 print("Trainer is ready.")
 print("Starting training session...")

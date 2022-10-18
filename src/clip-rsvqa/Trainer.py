@@ -3,15 +3,12 @@ import os
 from datetime import datetime
 from typing import Tuple, Union
 
-import h5py
 import datasets
 import torch
 import wandb
 from H5Dataset import H5Dataset
 from tqdm.auto import tqdm
 from torch.nn import CrossEntropyLoss
-from transformers import CLIPFeatureExtractor, CLIPTokenizer
-from torch.profiler import profile, record_function, ProfilerActivity
 
 
 class Trainer:
@@ -188,7 +185,6 @@ class Trainer:
             Tuple[dict, float]: Tuple with a dictionary with the performance metrics (accuracy) for the trainer's model with the validation dataset
             and the validation loss.
         """
-        print("\tgoing to validate data")
         metrics = datasets.load_metric("accuracy")
         self.model.eval()
         running_loss = 0.0
@@ -200,7 +196,7 @@ class Trainer:
                 predictions = torch.argmax(logits, dim=-1)
                 metrics.add_batch(predictions=predictions, references=batch["label"])
         self.model.train()
-        return metrics.compute(), running_loss/len(self.validation_loader)
+        return metrics.compute(), running_loss.item()/len(self.validation_loader)
 
     def trainPatience(self, epochs: dict) -> bool:
         """
@@ -234,11 +230,10 @@ class Trainer:
             return -1
 
     def batchToGPU(self, batch: dict) -> dict:
-        batch.update({"input_ids": batch["input_ids"].to(self.device, non_blocking=True),
-                    "attention_mask": batch["attention_mask"].to(self.device, non_blocking=True),
-                    "pixel_values": batch["pixel_values"].to(self.device, non_blocking=True),
-                    "label": batch["label"].to(self.device, non_blocking=True)
-                    })
+        batch["input_ids"] = batch["input_ids"].to(self.device, non_blocking=True) 
+        batch["attention_mask"] = batch["attention_mask"].to(self.device, non_blocking=True) 
+        batch["pixel_values"] = batch["pixel_values"].to(self.device, non_blocking=True) 
+        batch["label"] = batch["label"].to(self.device, non_blocking=True) 
         return batch
 
     def writeLog(self, epochs: dict) -> dict:
@@ -280,7 +275,6 @@ class Trainer:
             log_to_write["test metrics"], log_to_write["test phili metrics"] = self.test()
         else:
             log_to_write["test metrics"] = self.test()
-
         log_to_write["epochs"] = epochs
 
         with open(os.path.join(self.log_folder_path, self.run_name.replace(" ", "_").replace(":", "_").replace("-", "_") + ".json"), "w") as log_file:
@@ -298,7 +292,6 @@ class Trainer:
         Returns:
             str: path of the saved model file.
         """
-        print("\tgoing to save model")
         if self.getBestModel(epochs) == epoch:
             for model in os.listdir(self.log_folder_path):
                 if model.endswith(".pt"):
@@ -316,7 +309,6 @@ class Trainer:
         Args:
             epochs (dict): Dictionary with all the information relevant to the training.
         """
-        print("\tgoing to save train")
         # save the best model and write the logs
         print("Completed model training in",
               self.writeLog(epochs)["total elapsed time"])
@@ -330,69 +322,67 @@ class Trainer:
             If the threshold value is 0 this stop condition is ignored.
         Once the training loop is complete a log is saved.
         """
-        with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA]) as prof:
 
-            # create log folder for the training session
-            self.log_folder_path = os.path.join("logs", self.dataset_name, self.run_name.replace(
-                " ", "_").replace(":", "_").replace("-", "_"))
-            os.makedirs(self.log_folder_path)
+        # create log folder for the training session
+        self.log_folder_path = os.path.join("logs", self.dataset_name, self.run_name.replace(
+            " ", "_").replace(":", "_").replace("-", "_"))
+        os.makedirs(self.log_folder_path)
 
-            epochs = {}
-            epoch_count = 1
+        epochs = {}
+        epoch_count = 1
 
-            # training loop
-            while epoch_count <= self.limit_epochs and self.trainPatience(epochs):
-                epoch_start_time = datetime.now()
-                print(epoch_start_time.strftime("%Y-%m-%d %H:%M:%S"), "- Started epoch", epoch_count)
-                running_loss = 0.0
-                train_metrics = {"overall": datasets.load_metric("accuracy")}
-                for question_type in self.train_dataset.categories:
-                    train_metrics[str(question_type)] = datasets.load_metric("accuracy")
-                epochs[epoch_count] = {}
+        # training loop
+        while epoch_count <= self.limit_epochs and self.trainPatience(epochs):
+            epoch_start_time = datetime.now()
+            print(epoch_start_time.strftime("%Y-%m-%d %H:%M:%S"), "- Started epoch", epoch_count)
+            running_loss = 0.0
+            train_metrics = {"overall": datasets.load_metric("accuracy")}
+            for question_type in self.train_dataset.categories:
+                train_metrics[str(question_type)] = datasets.load_metric("accuracy")
+            epochs[epoch_count] = {}
 
-                epoch_progress = tqdm(range(len(self.train_loader)))
-                # train
-                for batch in self.train_loader:
-                    batch = self.batchToGPU(batch)
-                    self.optimizer.zero_grad(set_to_none=True)
-                    logits = self.model(input_ids=batch["input_ids"], attention_mask = batch["attention_mask"], pixel_values=batch["pixel_values"])
-                    loss = self.loss_fcn(logits, batch["label"])
-                    loss.backward()
-                    running_loss += loss
-                    self.optimizer.step()
-                    predictions = torch.argmax(logits, dim=-1)
-                    for (prediction, category, ground_truth) in zip(predictions, batch["category"], batch["label"]):
-                        train_metrics[category].add(prediction=prediction, reference=ground_truth)
-                        train_metrics["overall"].add(prediction=prediction, references=ground_truth)
-                    epoch_progress.update(1)
+            epoch_progress = tqdm(range(len(self.train_loader)))
+            # train
+            for batch in self.train_loader:
+                batch = self.batchToGPU(batch)
+                self.optimizer.zero_grad(set_to_none=True)
+                logits = self.model(input_ids=batch["input_ids"], attention_mask = batch["attention_mask"], pixel_values=batch["pixel_values"])
+                loss = self.loss_fcn(logits, batch["label"])
+                loss.backward()
+                running_loss += loss
+                self.optimizer.step()
+                predictions = torch.argmax(logits, dim=-1)
+                for (prediction, category, ground_truth) in zip(predictions, batch["category"], batch["label"]):
+                    train_metrics[category].add(prediction=prediction, reference=ground_truth)
+                    train_metrics["overall"].add(prediction=prediction, references=ground_truth)
+                epoch_progress.update(1)
 
-                # current training loss and accuracy for the epoch
-                to_log = {"epochs": epoch_count}
-                epoch_finish_time = datetime.now()
-                to_log["learning rate"] = epochs[epoch_count]["learning rate"] = self.lr_scheduler.optimizer.param_groups[0]["lr"]
+            # current training loss and accuracy for the epoch
+            to_log = {"epochs": epoch_count}
+            epoch_finish_time = datetime.now()
+            to_log["learning rate"] = epochs[epoch_count]["learning rate"] = self.lr_scheduler.optimizer.param_groups[0]["lr"]
 
-                for category in train_metrics:
-                    train_metrics[category] = train_metrics[category].compute()
-                    to_log["train - " + category + " accuracy"] = train_metrics[category]["accuracy"]
-                epochs[epoch_count]["train metrics"] = train_metrics
+            for category in train_metrics:
+                train_metrics[category] = train_metrics[category].compute()
+                to_log["train - " + category + " accuracy"] = train_metrics[category]["accuracy"]
+            epochs[epoch_count]["train metrics"] = train_metrics
 
-                to_log["train - loss"] = epochs[epoch_count]["train loss"] = running_loss/len(self.train_loader)
+            to_log["train - loss"] = epochs[epoch_count]["train loss"] = running_loss.item()/len(self.train_loader)
 
-                # validate the training epoch
-                epochs[epoch_count]["validation metrics"], epochs[epoch_count]["validation loss"] = self.validate()
-                print("validation complete")
-                to_log["validation - overall accuracy"] = epochs[epoch_count]["validation metrics"]["accuracy"]
-                to_log["validation - loss"] = epochs[epoch_count]["validation loss"]
+            # validate the training epoch
+            epochs[epoch_count]["validation metrics"], epochs[epoch_count]["validation loss"] = self.validate()
+            to_log["validation - overall accuracy"] = epochs[epoch_count]["validation metrics"]["accuracy"]
+            to_log["validation - loss"] = epochs[epoch_count]["validation loss"]
 
-                epochs[epoch_count]["elapsed time"] = str((epoch_finish_time - epoch_start_time)).split(".")[0]
+            epochs[epoch_count]["elapsed time"] = str((epoch_finish_time - epoch_start_time)).split(".")[0]
 
-                # save the model state if this epoch has the current best model
-                self.saveModel(epoch_count, epochs)
-                # update learning rate
-                self.lr_scheduler.step(epochs[epoch_count]["validation accuracy"])
-                wandb.log(to_log)
+            # save the model state if this epoch has the current best model
+            self.saveModel(epoch_count, epochs)
+            # update learning rate
+            self.lr_scheduler.step(epochs[epoch_count]["validation metrics"]["accuracy"])
+            wandb.log(to_log)
 
-                epoch_progress.close()
-                print(epoch_finish_time.strftime("%Y-%m-%d %H:%M:%S"), "- Finished epoch", epoch_count)
-                epoch_count += 1
-            self.saveTrain(epochs)
+            epoch_progress.close()
+            print(epoch_finish_time.strftime("%Y-%m-%d %H:%M:%S"), "- Finished epoch", epoch_count)
+            epoch_count += 1
+        self.saveTrain(epochs)
