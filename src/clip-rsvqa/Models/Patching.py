@@ -1,5 +1,4 @@
 import torch
-from torch.nn import CrossEntropyLoss
 from transformers import CLIPModel
 from copy import deepcopy
 
@@ -20,7 +19,6 @@ class CLIPxRSVQA(CLIPModel):
         self.new_transformer_encoder = torch.nn.TransformerEncoder(self.new_encoder_layer, num_layers=3)
         self.classification = torch.nn.Linear(512, num_labels, bias=True)
         self.logit_scale = clip_model.logit_scale
-        self.loss = CrossEntropyLoss()
         self.num_labels = num_labels
 
 
@@ -41,7 +39,6 @@ class CLIPxRSVQA(CLIPModel):
         # normalize features
         text_embeds = text_embeds / text_embeds.norm(p=2, dim=-1, keepdim=True)
         image_embeds = self.image_fusing(pixel_values)  # size: [batch_size, 50*#patches, 512]
-
         # size: [batch_size, 50*#patches+sequence_length, 512]
         joint_embeds = torch.cat((image_embeds, text_embeds), dim=1)
         # size: [batch_size, 50*#patches+sequence_length], where the first 50*#patches elements are ones - images are not masked
@@ -54,13 +51,11 @@ class CLIPxRSVQA(CLIPModel):
             text_attention_mask=attention_mask, image_embeds=image_embeds, text_embeds=text_embeds)  # size: [batch_size, 50*#patches+sequence_length, 512]
 
         multimodal_embed = self.mean_pooling(multimodal_embed, multimodal_embed_mask)  # size: [batch_size, 512]
-        outputs["logits"] = self.classification(multimodal_embed)  # size: [batch_size, n_labels]
-        outputs["loss"] = self.loss(outputs["logits"], labels)
-        return outputs
+        return self.classification(multimodal_embed)  # size: [batch_size, n_labels]
 
     def image_fusing(self, pixel_values):
         patch1 = self.vision_model(
-            pixel_values=pixel_values[0],
+            pixel_values=pixel_values[:, 0],
             output_attentions=False,
             output_hidden_states=True,
             return_dict=True,
@@ -69,7 +64,7 @@ class CLIPxRSVQA(CLIPModel):
         patch1_embeds = patch1_embeds / patch1_embeds.norm(p=2, dim=-1, keepdim=True)
 
         patch2 = self.vision_model(
-            pixel_values=pixel_values[1],
+            pixel_values=pixel_values[:, 1],
             output_attentions=False,
             output_hidden_states=True,
             return_dict=True,
@@ -78,7 +73,7 @@ class CLIPxRSVQA(CLIPModel):
         patch2_embeds = patch2_embeds / patch2_embeds.norm(p=2, dim=-1, keepdim=True)
 
         patch3 = self.vision_model(
-            pixel_values=pixel_values[2],
+            pixel_values=pixel_values[:, 2],
             output_attentions=False,
             output_hidden_states=True,
             return_dict=True,
@@ -87,7 +82,7 @@ class CLIPxRSVQA(CLIPModel):
         patch3_embeds = patch3_embeds / patch3_embeds.norm(p=2, dim=-1, keepdim=True)
 
         patch4 = self.vision_model(
-            pixel_values=pixel_values[3],
+            pixel_values=pixel_values[:, 3],
             output_attentions=False,
             output_hidden_states=True,
             return_dict=True,
@@ -96,7 +91,7 @@ class CLIPxRSVQA(CLIPModel):
         patch4_embeds = patch4_embeds / patch4_embeds.norm(p=2, dim=-1, keepdim=True)
 
         full_image = self.vision_model(
-            pixel_values=pixel_values[4],
+            pixel_values=pixel_values[:, 4],
             output_attentions=False,
             output_hidden_states=True,
             return_dict=True,

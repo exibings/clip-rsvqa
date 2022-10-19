@@ -24,30 +24,30 @@ class Trainer:
         if self.dataset_name == "RSVQA-LR":
             self.train_dataset = H5Dataset(os.path.join("datasets", "RSVQA-LR", "rsvqa_lr.h5"), "train", model)
             self.train_loader = torch.utils.data.DataLoader(self.train_dataset, batch_size=self.batch_size,
-                                                            shuffle=True, num_workers=4)
+                                                            shuffle=True, num_workers=6, pin_memory=True)
             self.validation_dataset = H5Dataset(os.path.join("datasets", "RSVQA-LR", "rsvqa_lr.h5"), "validation", model)
             self.validation_loader = torch.utils.data.DataLoader(self.validation_dataset, batch_size=self.batch_size,
-                                                                shuffle=False, num_workers=4)
+                                                                shuffle=False, num_workers=6, pin_memory=True)
             self.test_dataset = H5Dataset(os.path.join("datasets", "RSVQA-LR", "rsvqa_lr.h5"), "test", model)
             self.test_loader = torch.utils.data.DataLoader(self.test_dataset, batch_size=self.batch_size,
-                                                        shuffle=False, num_workers=4)
+                                                        shuffle=False, num_workers=6, pin_memory=True)
             self.id2label = json.load(open(os.path.join("datasets", "RSVQA-LR", "rsvqa_lr_id2label.json"), "r"))
             self.label2id = json.load(open(os.path.join("datasets", "RSVQA-LR", "rsvqa_lr_label2id.json"), "r"))
 
         elif self.dataset_name == "RSVQA-HR":
             self.train_dataset = H5Dataset(os.path.join("datasets", "RSVQA-HR", "rsvqa_hr.h5"), "train", model)
             self.train_loader = torch.utils.data.DataLoader(self.train_dataset, batch_size=self.batch_size,
-                                                            shuffle=True, num_workers=4)
+                                                            shuffle=True, num_workers=6, pin_memory=True)
             self.validation_dataset = H5Dataset(os.path.join(
                 "datasets", "RSVQA-HR", "rsvqa_hr.h5"), "validation", model)
             self.validation_loader = torch.utils.data.DataLoader(self.validation_dataset, batch_size=self.batch_size,
-                                                                 shuffle=False, num_workers=4)
+                                                                 shuffle=False, num_workers=6, pin_memory=True)
             self.test_dataset = H5Dataset(os.path.join("datasets", "RSVQA-HR", "rsvqa_hr.h5"), "test", model)
             self.test_loader = torch.utils.data.DataLoader(self.test_dataset, batch_size=self.batch_size,
-                                                           shuffle=False, num_workers=4)
+                                                           shuffle=False, num_workers=6, pin_memory=True)
             self.test_phili_dataset = H5Dataset(os.path.join("datasets", "RSVQA-HR", "rsvqa_hr.h5"), "test_phili", model)
             self.test_phili_loader = torch.utils.data.DataLoader(self.test_phili_dataset, batch_size=self.batch_size,
-                                                           shuffle=False, num_workers=4)
+                                                           shuffle=False, num_workers=6, pin_memory=True)
             self.id2label = json.load(open(os.path.join("datasets", "RSVQA-HR", "rsvqa_hr_id2label.json"), "r"))
             self.label2id = json.load(open(os.path.join("datasets", "RSVQA-HR", "rsvqa_hr_label2id.json"), "r"))
         
@@ -87,11 +87,9 @@ class Trainer:
             self.model.freeze_vision()
 
         if load_model:
-            wandb.init(project="CLIPxRSVQA", job_type="eval",
-                       name=self.run_name, config=wandb_config)
+            wandb.init(project="CLIPxRSVQA", job_type="eval", name=self.run_name, config=wandb_config)
         else:
-            wandb.init(project="CLIPxRSVQA", job_type="train",
-                       name=self.run_name, config=wandb_config)
+            wandb.init(project="CLIPxRSVQA", job_type="train", name=self.run_name, config=wandb_config)
         self.model.to(self.device)  # send model to GPU
 
     def load_model(self, model_path: str) -> None:
@@ -230,6 +228,15 @@ class Trainer:
             return -1
 
     def batchToGPU(self, batch: dict) -> dict:
+        """
+        Sends batch tuple to GPU.
+
+        Args:
+            batch (dict): batch to be sent to GPU.
+
+        Returns:
+            dict: same batch that was passed as argument but values are in GPU.
+        """
         batch["input_ids"] = batch["input_ids"].to(self.device, non_blocking=True) 
         batch["attention_mask"] = batch["attention_mask"].to(self.device, non_blocking=True) 
         batch["pixel_values"] = batch["pixel_values"].to(self.device, non_blocking=True) 

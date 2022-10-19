@@ -1,4 +1,3 @@
-from turtle import position
 import torch
 from transformers import CLIPModel
 

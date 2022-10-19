@@ -5,7 +5,7 @@ import json
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 dataset_name = "RSVQA-LR"
-model_name = "baseline"
+model_name = "patching"
 if model_name == "baseline":
     from Models.Baseline import CLIPxRSVQA
 elif model_name == "patching":
@@ -18,15 +18,14 @@ label2id = json.load(open(os.path.join("datasets", "RSVQA-LR", "rsvqa_lr_label2i
 model = CLIPxRSVQA(num_labels=len(label2id))
 model.to(device)  # send model to GPU
 
-train_dataset_loader = torch.utils.data.DataLoader(train_dataset, batch_size=80,
-                                             shuffle=False, pin_memory=True, num_workers=4)
+train_dataset_loader = torch.utils.data.DataLoader(train_dataset, batch_size=20,
+                                             shuffle=False, pin_memory=True, num_workers=6)
 
 #print("model.name=", model.name)
 batch = next(iter(train_dataset_loader))
 for key in batch:
     if key != "category" and key != "question" and key != "label":
-        batch[key] = batch[key].to(device, non_blocking=True)
-
+        batch[key] = batch[key].to(device, non_blocking=True)    
 
 #print("batch.pixel_values.size()", batch["pixel_values"].size())
 #print("batch.pixel_values", batch["pixel_values"])

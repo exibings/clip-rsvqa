@@ -17,15 +17,15 @@ class H5Dataset(torch.utils.data.Dataset):
                     file[self.split]["category"]) == len(file[self.split]["attention_mask"]) == len(file[self.split]["input_ids"]), "non matching number of entries in .h5 file."
                 self.dataset_len = len(file[self.split]["img_id"])
             self.categories = [category.decode("utf-8") for category in np.unique(file[self.split]["category"])]
-    
+
     def __getitem__(self, idx):
         if self.dataset is None:
             self.dataset = h5py.File(self.file_path, 'r')
         output = {}
-        output["attention_mask"] = self.dataset[self.split + "/attention_mask"][idx]
         output["category"] = self.dataset[self.split + "/category"][idx].decode("utf-8")
-        output["img_id"] = self.dataset[self.split + "/img_id"][idx]
         output["input_ids"] = self.dataset[self.split + "/input_ids"][idx]
+        output["attention_mask"] = self.dataset[self.split + "/attention_mask"][idx]
+        output["img_id"] = self.dataset[self.split + "/img_id"][idx]
         output["label"] = self.dataset[self.split + "/label"][idx]
         if self.mode == "baseline":
             output["pixel_values"] = self.dataset["pixel_values"][output["img_id"]][4]
