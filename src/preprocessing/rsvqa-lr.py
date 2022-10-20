@@ -17,10 +17,9 @@ testDataset["label"] = testDataset.apply(lambda x: utils.area_func(x["label"], x
 testDataset["label"] = testDataset.apply(lambda x: utils.count_func(x["label"], x["category"]), axis="columns")
 
 label2id, id2label = utils.encodeDatasetLabels("RSVQA-LR", trainDataset, validationDataset, testDataset)
-with open(os.path.join("datasets", "RSVQA-LR", "rsvqa_lr_label2id.json"), "w") as label2id_file:
-    json.dump(label2id, label2id_file)
-with open(os.path.join("datasets", "RSVQA-LR", "rsvqa_lr_id2label.json"), "w") as id2label_file:
-    json.dump(id2label, id2label_file)
+encodings = {"label2id": label2id, "id2label": id2label}
+with open(os.path.join("datasets", "RSVQA-LR", "rsvqa_lr_encodings.json"), "w") as encodings_file:
+    json.dump(encodings, encodings_file)
 trainDataset.replace(label2id, inplace=True)
 validationDataset.replace(label2id, inplace=True)
 testDataset.replace(label2id, inplace=True)

@@ -23,8 +23,9 @@ testPhiliDataset["label"] = testPhiliDataset.apply(
     lambda x: utils.count_func(x["label"], x["category"]), axis="columns")
 
 label2id, id2label = utils.encodeDatasetLabels("RSVQA-HR", trainDataset, validationDataset, testDataset, testPhiliDataset)
-with open(os.path.join("datasets", "RSVQA-HR", "rsvqa_hr_label2id.json"), "w") as label2id_file:
-    json.dump(label2id, label2id_file)
+encodings = {"label2id": label2id, "id2label": id2label}
+with open(os.path.join("datasets", "RSVQA-HR", "rsvqa_hr_encodings.json"), "w") as encodings_file:
+    json.dump(encodings, encodings_file)
 with open(os.path.join("datasets", "RSVQA-HR", "rsvqa_hr_id2label.json"), "w") as id2label_file:
     json.dump(id2label, id2label_file)
 trainDataset.replace(label2id, inplace=True)

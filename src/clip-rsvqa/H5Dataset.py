@@ -14,9 +14,10 @@ class H5Dataset(torch.utils.data.Dataset):
                 self.dataset_len = len(file[self.split])
             else:
                 assert len(file[self.split]["img_id"]) == len(file[self.split]["category"]) == len(
-                    file[self.split]["category"]) == len(file[self.split]["attention_mask"]) == len(file[self.split]["input_ids"]), "non matching number of entries in .h5 file."
+                    file[self.split]["label"]) == len(file[self.split]["attention_mask"]) == len(file[self.split]["input_ids"]), "non matching number of entries in .h5 file."
                 self.dataset_len = len(file[self.split]["img_id"])
             self.categories = [category.decode("utf-8") for category in np.unique(file[self.split]["category"])]
+            self.num_labels = len(np.unique(file[self.split]["label"]))
 
     def __getitem__(self, idx):
         if self.dataset is None:

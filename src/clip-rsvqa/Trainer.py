@@ -31,8 +31,7 @@ class Trainer:
             self.test_dataset = H5Dataset(os.path.join("datasets", "RSVQA-LR", "rsvqa_lr.h5"), "test", model)
             self.test_loader = torch.utils.data.DataLoader(self.test_dataset, batch_size=self.batch_size,
                                                         shuffle=False, num_workers=6, pin_memory=True)
-            self.id2label = json.load(open(os.path.join("datasets", "RSVQA-LR", "rsvqa_lr_id2label.json"), "r"))
-            self.label2id = json.load(open(os.path.join("datasets", "RSVQA-LR", "rsvqa_lr_label2id.json"), "r"))
+            self.encodings = json.load(open(os.path.join("datasets", "RSVQA-LR", "rsvqa_lr_encodings.json"), "r"))
 
         elif self.dataset_name == "RSVQA-HR":
             self.train_dataset = H5Dataset(os.path.join("datasets", "RSVQA-HR", "rsvqa_hr.h5"), "train", model)
@@ -48,8 +47,7 @@ class Trainer:
             self.test_phili_dataset = H5Dataset(os.path.join("datasets", "RSVQA-HR", "rsvqa_hr.h5"), "test_phili", model)
             self.test_phili_loader = torch.utils.data.DataLoader(self.test_phili_dataset, batch_size=self.batch_size,
                                                            shuffle=False, num_workers=6, pin_memory=True)
-            self.id2label = json.load(open(os.path.join("datasets", "RSVQA-HR", "rsvqa_hr_id2label.json"), "r"))
-            self.label2id = json.load(open(os.path.join("datasets", "RSVQA-HR", "rsvqa_hr_label2id.json"), "r"))
+            self.encodings = json.load(open(os.path.join("datasets", "RSVQA-HR", "rsvqa_hr_encodings.json"), "r"))
         
         elif self.dataset_name == "RSVQAxBEN":
             #TODO
@@ -59,7 +57,7 @@ class Trainer:
             from Models.Baseline import CLIPxRSVQA
         elif model == "patching":
             from Models.Patching import CLIPxRSVQA
-        self.model = CLIPxRSVQA(num_labels=len(self.label2id))
+        self.model = CLIPxRSVQA(num_labels=self.train_dataset.num_labels)
         self.model.name = model
         if load_model:
             self.load_model(model_path)
@@ -120,7 +118,7 @@ class Trainer:
 
         metrics = {"overall": datasets.load_metric("accuracy")}
         for question_type in self.test_dataset.categories:
-            metrics[str(question_type)] = datasets.load_metric("accuracy")
+            metrics[question_type] = datasets.load_metric("accuracy")
         self.model.eval()
 
         progress_bar = tqdm(range(len(self.test_loader)))
@@ -137,18 +135,16 @@ class Trainer:
         progress_bar.close()
         
         for category in metrics:
-            metrics[category] = metrics[category].compute()
-            wandb.run.summary["test - " + category + " accuracy"] = metrics[category]["accuracy"]
+            wandb.run.summary["test - " + category + " accuracy"] = metrics[category].compute()["accuracy"]
             if category != "overall":
-                total_accuracy += metrics[category]["accuracy"]
-        metrics["average"] = total_accuracy / (len(metrics) - 1)
-        wandb.run.summary["test - average accuracy"] = metrics["average"]
+                total_accuracy += wandb.run.summary["test - " + category + " accuracy"]
+        wandb.run.summary["test - average accuracy"] = total_accuracy / (len(metrics) - 1)
 
         if self.dataset_name == "RSVQA-HR":
             print("Computing metrics for test Philadelphia dataset")
             metrics_phili = {"overall": datasets.load_metric("accuracy")}
             for question_type in self.test_phili_dataset.categories:
-                metrics_phili[str(question_type)] = datasets.load_metric("accuracy")
+                metrics_phili[question_type] = datasets.load_metric("accuracy")
             
             progress_bar = tqdm(range(len(self.test_loader)))
             for batch in self.test_phili_loader:
@@ -164,12 +160,10 @@ class Trainer:
             progress_bar.close()
             
             for category in metrics_phili:
-                metrics_phili[category] = metrics_phili[category].compute()
-                wandb.run.summary["test phili - " + category + " accuracy"] = metrics_phili[category]["accuracy"]
+                wandb.run.summary["test phili - " + category + " accuracy"] = metrics_phili[category].compute()["accuracy"]
                 if category != "overall":
-                    total_accuracy += metrics_phili[category]["accuracy"]
-            metrics_phili["average"] = total_accuracy / (len(metrics_phili) - 1)
-            wandb.run.summary["test phili- average accuracy"] = metrics_phili["average"]
+                    total_accuracy += wandb.run.summary["test phili - " + category + " accuracy"]
+            wandb.run.summary["test phili- average accuracy"] = total_accuracy / (len(metrics_phili) - 1)
 
             return metrics, metrics_phili
 
@@ -194,7 +188,7 @@ class Trainer:
                 predictions = torch.argmax(logits, dim=-1)
                 metrics.add_batch(predictions=predictions, references=batch["label"])
         self.model.train()
-        return metrics.compute(), running_loss.item()/len(self.validation_loader)
+        return metrics.compute()["accuracy"], running_loss.item()/len(self.validation_loader)
 
     def trainPatience(self, epochs: dict) -> bool:
         """
@@ -212,7 +206,7 @@ class Trainer:
         else:
             return len(epochs) < highest_validation_epoch + self.patience
 
-    def getBestModel(self, epochs: dict) -> int:
+    def getBestModel(self, validation_metrics: dict) -> int:
         """
         Given a dictionary with the epochs data returns the epoch with the best model (highest validation metrics).
 
@@ -222,8 +216,8 @@ class Trainer:
         Returns:
             int: Epoch with the highest validation accuracy in the given epochs.
         """
-        if epochs != {}:
-            return max(epochs, key=lambda epoch: epochs[epoch]["validation metrics"]["accuracy"])
+        if validation_metrics != {}:
+            return max(validation_metrics, key=lambda epoch: validation_metrics[epoch]["accuracy"])
         else:
             return -1
 
@@ -289,7 +283,7 @@ class Trainer:
 
         return log_to_write
 
-    def saveModel(self, epoch: int, epochs: int) -> None:
+    def saveModel(self, current_epoch: int, validation_metrics: dict) -> None:
         """
         Updates the currently saved models to only keep the current best model
         Args:
@@ -299,14 +293,14 @@ class Trainer:
         Returns:
             str: path of the saved model file.
         """
-        if self.getBestModel(epochs) == epoch:
+        if self.getBestModel(validation_metrics) == current_epoch:
             for model in os.listdir(self.log_folder_path):
                 if model.endswith(".pt"):
                     # delete the previous best model
                     os.remove(os.path.join(self.log_folder_path, model))
-            file_path = os.path.join(self.log_folder_path, "epoch_" + str(epoch) + "_model.pt")
+            file_path = os.path.join(self.log_folder_path, "epoch_" + str(current_epoch) + "_model.pt")
             wandb.run.summary["best model"] = file_path
-            torch.save({"label2id": self.label2id, "id2label": self.id2label,
+            torch.save({"label2id": self.encodings["label2id"], "id2label": self.encodings["id2label"],
                        "model_state_dict": self.model.state_dict()}, file_path)
 
     def saveTrain(self, epochs: dict) -> None:
@@ -335,18 +329,18 @@ class Trainer:
             " ", "_").replace(":", "_").replace("-", "_"))
         os.makedirs(self.log_folder_path)
 
-        epochs = {}
+        validation_metrics = {}
         epoch_count = 1
 
         # training loop
-        while epoch_count <= self.limit_epochs and self.trainPatience(epochs):
+        while epoch_count <= self.limit_epochs and self.trainPatience(validation_metrics):
             epoch_start_time = datetime.now()
             print(epoch_start_time.strftime("%Y-%m-%d %H:%M:%S"), "- Started epoch", epoch_count)
             running_loss = 0.0
             train_metrics = {"overall": datasets.load_metric("accuracy")}
             for question_type in self.train_dataset.categories:
-                train_metrics[str(question_type)] = datasets.load_metric("accuracy")
-            epochs[epoch_count] = {}
+                train_metrics[question_type] = datasets.load_metric("accuracy")
+            validation_metrics[epoch_count] = {}
 
             epoch_progress = tqdm(range(len(self.train_loader)))
             # train
@@ -366,30 +360,24 @@ class Trainer:
 
             # current training loss and accuracy for the epoch
             to_log = {"epochs": epoch_count}
-            epoch_finish_time = datetime.now()
-            to_log["learning rate"] = epochs[epoch_count]["learning rate"] = self.lr_scheduler.optimizer.param_groups[0]["lr"]
-
+            to_log["learning rate"] = self.lr_scheduler.optimizer.param_groups[0]["lr"]
             for category in train_metrics:
-                train_metrics[category] = train_metrics[category].compute()
-                to_log["train - " + category + " accuracy"] = train_metrics[category]["accuracy"]
-            epochs[epoch_count]["train metrics"] = train_metrics
-
-            to_log["train - loss"] = epochs[epoch_count]["train loss"] = running_loss.item()/len(self.train_loader)
+                to_log["train - " + category + " accuracy"] = train_metrics[category].compute()["accuracy"]
+            to_log["train - loss"] =  running_loss.item()/len(self.train_loader)
 
             # validate the training epoch
-            epochs[epoch_count]["validation metrics"], epochs[epoch_count]["validation loss"] = self.validate()
-            to_log["validation - overall accuracy"] = epochs[epoch_count]["validation metrics"]["accuracy"]
-            to_log["validation - loss"] = epochs[epoch_count]["validation loss"]
+            validation_metrics[epoch_count]["accuracy"], validation_metrics[epoch_count]["loss"] = self.validate() 
+            to_log["validation - overall accuracy"] = validation_metrics[epoch_count]["accuracy"]
+            to_log["validation - loss"] = validation_metrics[epoch_count]["loss"]
 
-            epochs[epoch_count]["elapsed time"] = str((epoch_finish_time - epoch_start_time)).split(".")[0]
 
             # save the model state if this epoch has the current best model
-            self.saveModel(epoch_count, epochs)
+            self.saveModel(epoch_count, validation_metrics)
             # update learning rate
-            self.lr_scheduler.step(epochs[epoch_count]["validation metrics"]["accuracy"])
+            self.lr_scheduler.step(validation_metrics[epoch_count]["accuracy"])
             wandb.log(to_log)
-
+            epoch_finish_time = datetime.now()
             epoch_progress.close()
             print(epoch_finish_time.strftime("%Y-%m-%d %H:%M:%S"), "- Finished epoch", epoch_count)
             epoch_count += 1
-        self.saveTrain(epochs)
+        self.test()
