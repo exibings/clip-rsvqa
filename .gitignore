@@ -2,7 +2,7 @@ datasets/*
 logs/RSVQA-HR/*
 logs/RSVQA-LR/*
 logs/RSVQAxBEN/*
-src/clip-rsvqa/__pycache__
-src/preprocessing/__pycache__
+clip-rsvqa/__pycache__
+preprocessing/__pycache__
 wandb/*
-src/clip-rsvqa/Models/__pycache__
+clip-rsvqa/Models/__pycache__

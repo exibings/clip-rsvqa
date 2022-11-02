@@ -12,7 +12,7 @@ from torch.nn import CrossEntropyLoss
 
 
 class Trainer:
-    def __init__(self, limit_epochs: int = 100, batch_size: int = 80, patience: int = 20, lr_patience: int = 10, freeze: bool = True, dataset_name: str = None,
+    def __init__(self, limit_epochs: int = 100, batch_size: int = 48, patience: int = 20, lr_patience: int = 10, freeze: bool = True, dataset_name: str = None,
                  device: torch.device = torch.device("cpu"), load_model: bool = False, model_path: str = None, model: str = None) -> None:
         self.run_name = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         self.limit_epochs = limit_epochs
@@ -57,7 +57,7 @@ class Trainer:
             from Models.Baseline import CLIPxRSVQA
         elif model == "patching":
             from Models.Patching import CLIPxRSVQA
-        self.model = CLIPxRSVQA(num_labels=self.train_dataset.num_labels)
+        self.model = CLIPxRSVQA(num_labels=self.train_dataset.num_labels, model_aspect_ratio=(2,12)) # model aspect ratio = (n_layers, n_heads)
         self.model.name = model
         if load_model:
             self.load_model(model_path)
@@ -78,7 +78,8 @@ class Trainer:
             "train patience": self.patience,
             "learning rate patience": self.lr_patience,
             "freeze CLIP Vision": self.freeze,
-            "model": model
+            "model": model,
+            "model aspect ratio": self.model.aspect_ratio
         }
 
         if self.freeze:
@@ -190,7 +191,7 @@ class Trainer:
         self.model.train()
         return metrics.compute()["accuracy"], running_loss.item()/len(self.validation_loader)
 
-    def trainPatience(self, epochs: dict) -> bool:
+    def trainPatience(self, validation_metrics: dict) -> bool:
         """
         Checks if the best model during training was achieved or not. If the patience is 0, patience check is ignored.
 
@@ -200,11 +201,11 @@ class Trainer:
         Returns:
             bool: Returns True if the limit for the training hasn't been reached yet.
         """
-        highest_validation_epoch = self.getBestModel(epochs)
+        highest_validation_epoch = self.getBestModel(validation_metrics)
         if highest_validation_epoch == -1 or self.patience == 0:
             return True
         else:
-            return len(epochs) < highest_validation_epoch + self.patience
+            return len(validation_metrics) <= highest_validation_epoch + self.patience
 
     def getBestModel(self, validation_metrics: dict) -> int:
         """

@@ -4,10 +4,12 @@ from copy import deepcopy
 
 
 class CLIPxRSVQA(CLIPModel):
-    def __init__(self, num_labels):
+    def __init__(self, num_labels, model_aspect_ratio: tuple = (3,8)):
         clip_model = CLIPModel.from_pretrained("flax-community/clip-rsicd-v2")
         super().__init__(clip_model.config)
         self.text_model = clip_model.text_model
+        self.increase_position_embeddings(128)
+        self.aspect_ratio = model_aspect_ratio
         self.vision_model = clip_model.vision_model
         self.full_image_projection = clip_model.visual_projection
         self.patching_projection1 = deepcopy(clip_model.visual_projection)
@@ -15,16 +17,14 @@ class CLIPxRSVQA(CLIPModel):
         self.patching_projection3 = deepcopy(clip_model.visual_projection)
         self.patching_projection4 = deepcopy(clip_model.visual_projection)
         self.text_projection = clip_model.text_projection
-        self.new_encoder_layer = torch.nn.TransformerEncoderLayer(d_model=512, nhead=8)
-        self.new_transformer_encoder = torch.nn.TransformerEncoder(self.new_encoder_layer, num_layers=3)
+        self.new_encoder_layer = torch.nn.TransformerEncoderLayer(d_model=512, nhead=model_aspect_ratio[0])
+        self.new_transformer_encoder = torch.nn.TransformerEncoder(
+            self.new_encoder_layer, num_layers=model_aspect_ratio[1])
         self.classification = torch.nn.Linear(512, num_labels, bias=True)
         self.logit_scale = clip_model.logit_scale
         self.num_labels = num_labels
 
-
     def forward(self, input_ids=None, pixel_values: dict = None, attention_mask=None, position_ids=None, labels=None):
-        outputs = {}
-
         text_outputs = self.text_model(
             input_ids=input_ids,
             attention_mask=attention_mask,
@@ -117,3 +117,25 @@ class CLIPxRSVQA(CLIPModel):
     def freeze_vision(self):
         for param in self.vision_model.parameters():
             param.requires_grad = False
+
+    def increase_position_embeddings(self, new_max):
+        #print("before")
+        #print("size:", self.text_model.embeddings.position_embedding.weight.shape)
+        #print("values[0:77]:", self.text_model.embeddings.position_embedding.weight[0:77])
+        #print("values[54:100]:", self.text_model.embeddings.position_embedding.weight[54:77])
+        current_max_pos, embed_size = self.text_model.embeddings.position_embedding.weight.shape
+        assert new_max > current_max_pos
+        # allocate a larger position embedding matrix
+        new_pos_embed = self.text_model.embeddings.position_embedding.weight.new_empty(new_max, embed_size)
+        # copy position embeddings over and over to initialize the new position embeddings
+        k = 0
+        while k+current_max_pos <= new_max:
+            new_pos_embed[k:(k + current_max_pos)] = self.text_model.embeddings.position_embedding.weight
+            k += current_max_pos
+        new_pos_embed[k:new_max] = self.text_model.embeddings.position_embedding.weight[current_max_pos - (new_max - k):current_max_pos]
+        self.text_model.embeddings.position_embedding.weight.data = new_pos_embed
+        self.text_model.embeddings.position_ids.data = torch.tensor([i for i in range(new_max)]).reshape(1, new_max)
+        #print("after")
+        #print("size:", self.text_model.embeddings.position_embedding.weight.shape)
+        #print("values[0:77]:", self.text_model.embeddings.position_embedding.weight[0:77])
+        #print("values[77:100]:", self.text_model.embeddings.position_embedding.weight[77:100])

@@ -4,11 +4,33 @@ import h5py
 from PIL import Image
 import pandas as pd
 import json
+import matplotlib.pyplot as plt
 
 trainDataset = pd.read_csv(os.path.join("datasets", "RSVQA-HR", "traindf.csv"), sep=",").drop(columns="mode").rename(columns={"answer": "label"})
 validationDataset = pd.read_csv(os.path.join("datasets", "RSVQA-HR", "valdf.csv"), sep=",").drop(columns="mode").rename(columns={"answer": "label"})
 testDataset = pd.read_csv(os.path.join("datasets", "RSVQA-HR", "testdf.csv"), sep=",").drop(columns="mode").rename(columns={"answer": "label"})
 testPhiliDataset = pd.read_csv(os.path.join("datasets", "RSVQA-HR", "testdf_phili.csv"), sep=",").drop(columns="mode").rename(columns={"answer": "label"})
+
+trainDataset['question_length'] = trainDataset.question.apply(len)
+validationDataset['question_length'] = validationDataset.question.apply(len)
+testDataset['question_length'] = testDataset.question.apply(len)
+testPhiliDataset['question_length'] = testPhiliDataset.question.apply(len)
+print("train question length 90th percentile:", trainDataset.question_length.quantile(0.9))
+print("validation question length 90th percentile:", validationDataset.question_length.quantile(0.9))
+print("test question length 90th percentile:", testDataset.question_length.quantile(0.9))
+print("test phili question length 90th percentile:", testPhiliDataset.question_length.quantile(0.9))
+
+fig, axes = plt.subplots(1, 4, figsize=(20, 4))
+trainDataset["question_length"].hist(ax=axes[0], bins=len(trainDataset.question_length.unique())).set_title(
+    "Train")
+validationDataset["question_length"].hist(ax=axes[1], bins=len(validationDataset.question_length.unique())).set_title(
+    "Validation")
+testDataset["question_length"].hist(ax=axes[2], bins=len(testDataset.question_length.unique())).set_title(
+    "Test")
+testPhiliDataset["question_length"].hist(ax=axes[3], bins=len(testPhiliDataset.question_length.unique())).set_title(
+    "Test Philadelphia")
+fig.suptitle("RSVQA-HR Question Length")
+fig.savefig(os.path.join("datasets", "RSVQA-HR", "question_length_distribution.png"))
 
 trainDataset["label"] = trainDataset.apply(lambda x: utils.area_func(x["label"], x["category"]), axis="columns")
 trainDataset["label"] = trainDataset.apply(lambda x: utils.count_func(x["label"], x["category"]), axis="columns")

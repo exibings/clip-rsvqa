@@ -6,6 +6,8 @@ import h5py
 import numpy as np
 
 tokenizer = CLIPTokenizer.from_pretrained("flax-community/clip-rsicd-v2")
+tokenizer.model_max_length = 128
+tokenizer.init_kwargs['model_max_length'] = 100
 feature_extractor = CLIPFeatureExtractor.from_pretrained("flax-community/clip-rsicd-v2")
 
 
@@ -91,6 +93,7 @@ def encodeDatasetLabels(dataset_name: str, trainDataset: pd.DataFrame, validatio
 def createDatasetSplit(dataset_name, hfile, split, processed_dataframe):
     print("Creating", split)
     max_text_length = min(tokenizer.model_max_length, processed_dataframe.question.str.len().max())
+    print("Tokenizing with length:", max_text_length)
     print("\tTokenizing text...")
     processed_dataframe["input_ids"], processed_dataframe["attention_mask"] = processed_dataframe.apply(
         tokenizeText, args=(max_text_length,), result_type="expand", axis="columns").T.values

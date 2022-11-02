@@ -3,11 +3,11 @@ from transformers import CLIPModel
 
 
 class CLIPxRSVQA(CLIPModel):
-    def __init__(self, num_labels):
+    def __init__(self, num_labels, model_aspect_ratio: tuple = (3, 8)):
         clip_model = CLIPModel.from_pretrained("flax-community/clip-rsicd-v2")
         super().__init__(clip_model.config)
-        self.new_encoder_layer = torch.nn.TransformerEncoderLayer(d_model=512, nhead=8)
-        self.new_transformer_encoder = torch.nn.TransformerEncoder(self.new_encoder_layer, num_layers=3)
+        self.new_encoder_layer = torch.nn.TransformerEncoderLayer(d_model=512, nhead=model_aspect_ratio[0])
+        self.new_transformer_encoder = torch.nn.TransformerEncoder(self.new_encoder_layer, num_layers=model_aspect_ratio[1])
         self.text_model = clip_model.text_model
         self.vision_model = clip_model.vision_model
         self.visual_projection = clip_model.visual_projection

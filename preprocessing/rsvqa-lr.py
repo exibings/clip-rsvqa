@@ -4,10 +4,28 @@ import h5py
 from PIL import Image
 import pandas as pd
 import json
+import matplotlib.pyplot as plt
 
 trainDataset = pd.read_csv(os.path.join("datasets", "RSVQA-LR", "traindf.csv"), sep=",").drop(columns="mode").rename(columns={"answer": "label"})
 validationDataset = pd.read_csv(os.path.join("datasets", "RSVQA-LR", "valdf.csv"), sep=",").drop(columns="mode").rename(columns={"answer": "label"})
 testDataset = pd.read_csv(os.path.join("datasets", "RSVQA-LR", "testdf.csv"), sep=",").drop(columns="mode").rename(columns={"answer": "label"})
+
+trainDataset['question_length'] = trainDataset.question.apply(len)
+validationDataset['question_length'] = validationDataset.question.apply(len)
+testDataset['question_length'] = testDataset.question.apply(len)
+print("train question length 90th percentile:", trainDataset.question_length.quantile(0.9))
+print("validation question length 90th percentile:", validationDataset.question_length.quantile(0.9))
+print("test question length 90th percentile:", testDataset.question_length.quantile(0.9))
+
+fig, axes = plt.subplots(1, 3, figsize=(20, 4))
+trainDataset["question_length"].hist(ax=axes[0], bins=len(trainDataset.question_length.unique())).set_title(
+    "Train")
+validationDataset["question_length"].hist(ax=axes[1], bins=len(validationDataset.question_length.unique())).set_title(
+    "Validation")
+testDataset["question_length"].hist(ax=axes[2], bins=len(testDataset.question_length.unique())).set_title(
+    "Test")
+fig.suptitle("RSVQA-LR Question Length")
+fig.savefig(os.path.join("datasets", "RSVQA-LR", "question_length_distribution.png"))
 
 trainDataset["label"] = trainDataset.apply(lambda x: utils.area_func(x["label"], x["category"]), axis="columns")
 trainDataset["label"] = trainDataset.apply(lambda x: utils.count_func(x["label"], x["category"]), axis="columns")
