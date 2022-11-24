@@ -1,26 +1,26 @@
 import torch
 import os
-from H5Dataset import H5Dataset
+import H5Datasets
 import json 
-#device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 dataset_name = "RSVQA-LR"
 model_name = "patching"
+
 if model_name == "baseline":
     from Models.Baseline import CLIPxRSVQA
 elif model_name == "patching":
     from Models.Patching import CLIPxRSVQA
-train_dataset = H5Dataset(os.path.join("datasets", dataset_name, "rsvqa_lr.h5"), "train", model_name)
+    
+train_dataset = H5Datasets.RsvqaDataset(os.path.join("datasets", dataset_name, "rsvqa_lr.h5"), "train", model_name)
 # load label encodings
 encodings = json.load(open(os.path.join("datasets", "RSVQA-LR", "rsvqa_lr_encodings.json"), "r"))
 id2label = encodings["id2label"]
 label2id = encodings["label2id"]
 
 model = CLIPxRSVQA(num_labels=len(label2id), model_aspect_ratio=(2, 12))
-exit()
-#model.to(device)  # send model to GPU
-
-train_dataset_loader = torch.utils.data.DataLoader(train_dataset, batch_size=20,
+model.to(device)  # send model to GPU
+train_dataset_loader = torch.utils.data.DataLoader(train_dataset, batch_size=16,
                                              shuffle=False, pin_memory=True, num_workers=6)
 
 #print("model.name=", model.name)

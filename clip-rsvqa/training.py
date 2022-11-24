@@ -22,7 +22,7 @@ parser.add_argument("--model", metavar="model", type=str,
 
 args = parser.parse_args()
 args = {"limit_epochs": args.epochs,
-        "batch_size": 48 if args.model == "patching" else 96,
+        "batch_size": args.batch_size,
         "patience": args.patience,
         "lr_patience": args.lr_patience,
         "freeze": True if args.freeze == 1 else False,

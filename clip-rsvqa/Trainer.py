@@ -6,7 +6,7 @@ from typing import Tuple, Union
 import datasets
 import torch
 import wandb
-from H5Dataset import H5Dataset
+import H5Datasets
 from tqdm.auto import tqdm
 from torch.nn import CrossEntropyLoss
 
@@ -22,29 +22,29 @@ class Trainer:
         self.device = device
 
         if self.dataset_name == "RSVQA-LR":
-            self.train_dataset = H5Dataset(os.path.join("datasets", "RSVQA-LR", "rsvqa_lr.h5"), "train", model)
+            self.train_dataset = H5Datasets.RsvqaDataset(os.path.join("datasets", "RSVQA-LR", "rsvqa_lr.h5"), "train", model)
             self.train_loader = torch.utils.data.DataLoader(self.train_dataset, batch_size=self.batch_size,
                                                             shuffle=True, num_workers=6, pin_memory=True)
-            self.validation_dataset = H5Dataset(os.path.join("datasets", "RSVQA-LR", "rsvqa_lr.h5"), "validation", model)
+            self.validation_dataset = H5Datasets.RsvqaDataset(os.path.join("datasets", "RSVQA-LR", "rsvqa_lr.h5"), "validation", model)
             self.validation_loader = torch.utils.data.DataLoader(self.validation_dataset, batch_size=self.batch_size,
                                                                 shuffle=False, num_workers=6, pin_memory=True)
-            self.test_dataset = H5Dataset(os.path.join("datasets", "RSVQA-LR", "rsvqa_lr.h5"), "test", model)
+            self.test_dataset = H5Datasets.RsvqaDataset(os.path.join("datasets", "RSVQA-LR", "rsvqa_lr.h5"), "test", model)
             self.test_loader = torch.utils.data.DataLoader(self.test_dataset, batch_size=self.batch_size,
                                                         shuffle=False, num_workers=6, pin_memory=True)
             self.encodings = json.load(open(os.path.join("datasets", "RSVQA-LR", "rsvqa_lr_encodings.json"), "r"))
 
         elif self.dataset_name == "RSVQA-HR":
-            self.train_dataset = H5Dataset(os.path.join("datasets", "RSVQA-HR", "rsvqa_hr.h5"), "train", model)
+            self.train_dataset = H5Datasets.RsvqaDataset(os.path.join("datasets", "RSVQA-HR", "rsvqa_hr.h5"), "train", model)
             self.train_loader = torch.utils.data.DataLoader(self.train_dataset, batch_size=self.batch_size,
                                                             shuffle=True, num_workers=6, pin_memory=True)
-            self.validation_dataset = H5Dataset(os.path.join(
+            self.validation_dataset = H5Datasets.RsvqaDataset(os.path.join(
                 "datasets", "RSVQA-HR", "rsvqa_hr.h5"), "validation", model)
             self.validation_loader = torch.utils.data.DataLoader(self.validation_dataset, batch_size=self.batch_size,
                                                                  shuffle=False, num_workers=6, pin_memory=True)
-            self.test_dataset = H5Dataset(os.path.join("datasets", "RSVQA-HR", "rsvqa_hr.h5"), "test", model)
+            self.test_dataset = H5Datasets.RsvqaDataset(os.path.join("datasets", "RSVQA-HR", "rsvqa_hr.h5"), "test", model)
             self.test_loader = torch.utils.data.DataLoader(self.test_dataset, batch_size=self.batch_size,
                                                            shuffle=False, num_workers=6, pin_memory=True)
-            self.test_phili_dataset = H5Dataset(os.path.join("datasets", "RSVQA-HR", "rsvqa_hr.h5"), "test_phili", model)
+            self.test_phili_dataset = H5Datasets.RsvqaDataset(os.path.join("datasets", "RSVQA-HR", "rsvqa_hr.h5"), "test_phili", model)
             self.test_phili_loader = torch.utils.data.DataLoader(self.test_phili_dataset, batch_size=self.batch_size,
                                                            shuffle=False, num_workers=6, pin_memory=True)
             self.encodings = json.load(open(os.path.join("datasets", "RSVQA-HR", "rsvqa_hr_encodings.json"), "r"))
@@ -57,7 +57,7 @@ class Trainer:
             from Models.Baseline import CLIPxRSVQA
         elif model == "patching":
             from Models.Patching import CLIPxRSVQA
-        self.model = CLIPxRSVQA(num_labels=self.train_dataset.num_labels, model_aspect_ratio=(2,12)) # model aspect ratio = (n_layers, n_heads)
+        self.model = CLIPxRSVQA(num_labels=self.train_dataset.num_labels, model_aspect_ratio=(1,32)) # model aspect ratio = (n_layers, n_heads)
         self.model.name = model
         if load_model:
             self.load_model(model_path)
@@ -66,7 +66,7 @@ class Trainer:
         self.optimizer = torch.optim.AdamW(self.model.parameters(), lr=self.lr)
         self.lr_patience = lr_patience
         self.lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-            self.optimizer, "max", patience=self.lr_patience)
+            self.optimizer, "min", patience=self.lr_patience)
         self.loss_fcn = CrossEntropyLoss()
         self.freeze = freeze
 
@@ -375,7 +375,7 @@ class Trainer:
             # save the model state if this epoch has the current best model
             self.saveModel(epoch_count, validation_metrics)
             # update learning rate
-            self.lr_scheduler.step(validation_metrics[epoch_count]["accuracy"])
+            self.lr_scheduler.step(validation_metrics[epoch_count]["loss"])
             wandb.log(to_log)
             epoch_finish_time = datetime.now()
             epoch_progress.close()

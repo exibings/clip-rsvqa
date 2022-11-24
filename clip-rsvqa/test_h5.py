@@ -2,31 +2,39 @@ from PIL import Image
 import os
 import random
 import numpy as np
-from H5Dataset import H5Dataset
+import H5Datasets
 import json
 
-id2label = json.load(open(os.path.join("datasets","RSVQA-LR", "rsvqa_lr_id2label.json"), "r"))
-label2id = json.load(open(os.path.join("datasets","RSVQA-LR", "rsvqa_lr_label2id.json"), "r"))
+dataset_name = "NWPU-Captions"
+file_name = "nwpu_captions.h5"
+encodings_file_name = "nwpu_captions_encodings.json"
 
-print("id2label:", id2label)
-print("label2id:", label2id)
+
+dataset_folder =  os.path.join("datasets", dataset_name)
+encodings = json.load(open(os.path.join(dataset_folder, encodings_file_name), "r"))
+if dataset_name == "NWPU-Captions":
+    class2id = encodings["class2id"]
+    id2class = encodings["id2class"]
+else:
+    id2label = encodings["id2label"]
+    label2id = encodings["label2id"]
+#print("id2label:", id2label)
+#print("label2id:", label2id)
   
 
 print("opening datasets...")
-trainDataset = H5Dataset(os.path.join("datasets", "RSVQA-LR", "rsvqa_lr.h5"), "train", "baseline")
-print("datasets opened!")
-
-
-idx = random.randint(0, 772)
-print("line:", idx+2)
-print("number of samples:", len(trainDataset))
-print("Train")
-print("\tcategory:", trainDataset["category"][idx].decode("utf-8"))
-print("\timg id:", trainDataset["img_id"][idx])
-print("\tquestion:", trainDataset["question"][idx].decode("utf-8"))
-print("\tinput ids:", trainDataset["input_ids"][idx])
-print("\tattention mask:", trainDataset["attention_mask"][idx])
-print("\tlabel:", id2label[str(trainDataset["label"][idx])]) 
+trainDataset = H5Datasets.NwpuCaptionsDataset(os.path.join(dataset_folder, file_name), "train")
+valDataset = H5Datasets.NwpuCaptionsDataset(os.path.join(dataset_folder, file_name), "validation")
+testDataset = H5Datasets.NwpuCaptionsDataset(os.path.join(dataset_folder, file_name), "test")
+idx = random.randint(0, len(trainDataset))
+idx = 2
+print("number of train samples:", len(trainDataset))
+print("number of val samples:", len(valDataset) )
+print("number of test samples:", len(testDataset))
+#print("number of images:", trainDataset.num_images + valDataset.num_images + testDataset.num_images)
+print("Train Sample")
+print(trainDataset[idx])
+exit()
 print("Grabbing image", trainDataset["img_id"][idx])
 pixel_values = trainDataset["pixel_values"]*255
 pixel_values = pixel_values.astype(np.uint8)
