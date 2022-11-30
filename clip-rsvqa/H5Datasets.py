@@ -1,7 +1,10 @@
 import torch
 import h5py
 import numpy as np
-
+from PIL import Image
+import os
+from utils import ImageProcessing
+from torchvision.transforms.functional import pil_to_tensor
 
 class RsvqaDataset(torch.utils.data.Dataset):
     def __init__(self, path, split, mode):
@@ -72,12 +75,12 @@ class RsvqaBenDataset(torch.utils.data.Dataset):
     def __len__(self):
         return self.dataset_len
 
-
 class NwpuCaptionsDataset(torch.utils.data.Dataset):
     def __init__(self, path, split):
         self.file_path = path
         self.dataset = None
         self.split = split
+        self.image_processing = ImageProcessing()
         with h5py.File(self.file_path, 'r') as file:
             assert len(file[self.split]["img_id"]) == len(file[self.split]["class"]) == len(file[self.split]["caption"]) == len(file[self.split]["sent_id"]) == len(
                 file[self.split]["input_ids"]) == len(file[self.split]["attention_mask"]), "non matching number of entries in .h5 file."
@@ -99,6 +102,7 @@ class NwpuCaptionsDataset(torch.utils.data.Dataset):
         output["sent_id"] = self.dataset[self.split + "/sent_id"][idx]
         output["input_ids"] = self.dataset[self.split + "/input_ids"][idx]
         output["attention_mask"] = self.dataset[self.split + "/attention_mask"][idx]
+        output["pixel_values"] = self.image_processing(Image.open(os.path.join("datasets", "NWPU-Captions", "images", output["img_id"])))
         return output
 
     def __len__(self):
