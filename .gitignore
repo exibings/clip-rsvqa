@@ -6,3 +6,7 @@ clip-rsvqa/__pycache__
 preprocessing/__pycache__
 wandb/*
 clip-rsvqa/Models/__pycache__
+saved-models/RSVQA-HR/*
+saved-models/RSVQA-LR/*
+saved-models/RSVQAxBEN/*
+saved-models/NWPU-Captions/*

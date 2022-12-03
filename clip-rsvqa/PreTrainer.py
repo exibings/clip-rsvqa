@@ -12,50 +12,44 @@ import wandb
 
 
 class PreTrainer:
-    def __init__(self):
+    def __init__(self, batch_size, limit_epochs, patience, lr_patience, device):
+        self.run_config = {
+                "batch size": 3, # TODO change this to batch_size
+                "limit epochs": limit_epochs,
+                "patience": patience,
+                "initial learning rate": 5e-5,
+                "learning rate patience": lr_patience,
+                "dataset": "NWPU-Captions",
+                "logging steps": 50}
+
+        #wandb.init(project="CLIPxRSVQA", job_type="pre-train", name=self.run_name, config=self.run_config)
+        self.run_name = f"bs{self.run_config['batch size']:d}-lr{self.run_config['initial learning rate']:.0e}-lr_p{self.run_config['learning rate patience']:d}-adamw"
+        self.run_folder = os.path.join("saved-models", self.run_config["dataset"], self.run_name)
+        os.makedirs(self.run_folder)
+        # load pre-trained model
+        #self.model = CLIPModel.from_pretrained("saved-models/NWPU-Captions/2022-12-03-20h18/bs3-lr5e-05-lr_p10-adamwcp-0")
         self.model = CLIPModel.from_pretrained("flax-community/clip-rsicd-v2")
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.run_name = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        self.batch_size = 100
-        self.limit_epochs = 100
-        self.patience = 20
-        self.lr = 5e-5
-        self.lr_patience = 10
+        self.logging_steps = self.run_config["logging steps"]
+        self.device = device
+        self.batch_size = self.run_config["batch size"]
+        self.limit_epochs = self.run_config["limit epochs"]
+        self.patience = self.run_config["patience"]
+        self.lr = self.run_config["initial learning rate"]
+        self.lr_patience = self.run_config["learning rate patience"]
         self.optimizer = torch.optim.AdamW(self.model.parameters(), lr=self.lr)
-        self.lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-        self.optimizer, "min", patience=self.lr_patience)
+        self.lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, "min", patience=self.lr_patience)
         
-        self.dataset_name = "NWPU-Captions"
+        self.dataset_name = self.run_config["dataset"]
         self.train_dataset = H5Datasets.NwpuCaptionsDataset(os.path.join("datasets", "NWPU-Captions", "nwpu_captions.h5"), "train")
-        self.train_loader = torch.utils.data.DataLoader(self.train_dataset, batch_size=self.batch_size, shuffle=True, num_workers=6, pin_memory=True)
-        #self.validation_dataset = H5Datasets.NwpuCaptionsDataset(os.path.join("datasets", "NWPU-Captions", "nwpu_captions.h5"), "validation")
-        #self.validation_loader = torch.utils.Data.dataLoader(self.validation_dataset, collate_fn=self.dataCollator, batch_size=self.batch_size, shuffle=False, num_workers=6, pin_memory=True)
-        #self.test_dataset = H5Datasets.NwpuCaptionsDataset(os.path.join("datasets", "NWPU-Captions", "nwpu_captions.h5"), "test")
-        #self.test_loader = torch.utils.data.DataLoader(self.test_dataset, collate_fn=self.dataCollator, batch_size=self.batch_size, shuffle=False, num_workers=6, pin_memory=True)
+        self.train_loader = torch.utils.data.DataLoader(self.train_dataset, batch_size=self.batch_size, shuffle=False, num_workers=6, pin_memory=True)
+        self.validation_dataset = H5Datasets.NwpuCaptionsDataset(os.path.join("datasets", "NWPU-Captions", "nwpu_captions.h5"), "validation")
+        self.validation_loader = torch.utils.data.DataLoader(self.validation_dataset, batch_size=self.batch_size, shuffle=False, num_workers=6, pin_memory=True)
+        self.test_dataset = H5Datasets.NwpuCaptionsDataset(os.path.join("datasets", "NWPU-Captions", "nwpu_captions.h5"), "test")
+        self.test_loader = torch.utils.data.DataLoader(self.test_dataset, batch_size=self.batch_size, shuffle=False, num_workers=6, pin_memory=True)
         self.encodings = json.load(open(os.path.join("datasets", "NWPU-Captions", "nwpu_captions_encodings.json"), "r"))
-        
-        """
-        wandb_config = {
-            "initial_learning_rate": self.lr,
-            "limit epochs": self.limit_epochs,
-            "batch_size": self.batch_size,
-            "dataset": self.dataset_name,
-            "train patience": self.patience,
-            "learning rate patience": self.lr_patience
-        }
-        """
 
-        #wandb.init(project="CLIPxRSVQA", job_type="pre-train", name=self.run_name, config=wandb_config)
-        print(self.run_name, "batch size:", self.batch_size)
-        print("start:")
-        print("\ttorch.cuda.memory_allocated: %fGB"%(torch.cuda.memory_allocated(0)/1024/1024/1024))
-        print("\ttorch.cuda.memory_reserved: %fGB"%(torch.cuda.memory_reserved(0)/1024/1024/1024))
+
         self.model.to(self.device)  # send model to GPU
-        print("model sent to GPU:")
-        print("\ttorch.cuda.memory_allocated: %fGB"%(torch.cuda.memory_allocated(0)/1024/1024/1024))
-        print("\ttorch.cuda.memory_reserved: %fGB"%(torch.cuda.memory_reserved(0)/1024/1024/1024))
-
-
 
     def batchToGPU(self, batch: dict) -> dict:
         """
@@ -68,21 +62,84 @@ class PreTrainer:
             dict: same batch that was passed as argument but values are in GPU.
         """
         processed_batch = {"return_loss": True}
-        print("original images used:", batch["img_id"][:2])
+        print("original images used:", batch["img_id"][:3])
         processed_batch["input_ids"] = batch["input_ids"].to(self.device)#, non_blocking=True) 
         processed_batch["attention_mask"] = batch["attention_mask"].to(self.device)#, non_blocking=True) 
         processed_batch["pixel_values"] = batch["pixel_values"].to(self.device)#, non_blocking=True)
-        print("batch to gpu:")
-        print("\ttorch.cuda.memory_allocated: %fGB"%(torch.cuda.memory_allocated(0)/1024/1024/1024))
-        print("\ttorch.cuda.memory_reserved: %fGB"%(torch.cuda.memory_reserved(0)/1024/1024/1024))
         return processed_batch
     
+    def getBestModel(self, validation_losses: dict) -> int:
+        if validation_losses != {}:
+            return max(validation_losses.values())
+        else:
+            return -1
+
+    def saveModel(self, current_epoch: int, validation_losses: dict) -> None:
+        """
+        Updates the currently saved models to only keep the current best model
+        Args:
+            epoch (int): corresponding epoch of the model that it is being saved.
+            epochs (int): data related to all the previous epochs.
+
+        Returns:
+            str: path of the saved model file.
+        """
+        if self.getBestModel(validation_losses) == current_epoch:
+            for model in os.listdir(self.run_folder):
+                if model.endswith(".pt"):
+                    # delete the previous best model
+                    os.remove(os.path.join(self.run_folder, model))
+            # save the current model
+            file_path = self.run_file + "cp-" + current_epoch + ".pt"
+            wandb.run.summary["best model"] = file_path
+            self.model.save_pretrained(file_path)
+    
+    def trainPatience(self, validation_losses):
+        highest_validation_epoch = self.getBestModel(validation_losses)
+        if highest_validation_epoch == -1 or self.patience == 0:
+            return True
+        else:
+            return len(validation_losses) <= highest_validation_epoch + self.patience
+
     def train(self) -> None:
-        #TODO
-        progress_bar = tqdm(range(len(self.train_loader)))
-        for batch in self.train_loader:
-            progress_bar.update(1)
-        return 
+        epoch_count = 1
+        validation_losses = {}
+        
+        while epoch_count <= self.limit_epochs and self.trainPatience(validation_losses):
+            print(datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "- started epoch", epoch_count)     
+            progress_bar = tqdm(range(len(self.train_loader)))
+            # train loop
+            running_loss = 0.0
+            step = 0
+            for batch in self.train_loader:
+                # train step
+                batch = self.batchToGPU(batch)
+                self.optimizer.zero_grad(set_to_none=True)
+                loss = self.model(**batch)["loss"]
+                running_loss += loss.item()
+                total_loss += running_loss
+                loss.backward()
+                self.optimizer.step()
+                # /train step
+                if step % self.logging_steps == 0 and step > 0:
+                    wandb.log({"train/loss": running_loss/self.logging_steps}, commit=False)
+                    running_loss = 0.0
+                step += 1
+                progress_bar.update(1)
+
+
+            progress_bar.close()
+
+            # validate
+            validation_loss = self.validate()
+            validation_losses[epoch_count] = validation_loss
+            self.lr_scheduler.step(validation_loss) # update learning rate
+            wandb.log({"validation/loss": validation_loss, "epochs": epoch_count})
+
+            # finished epoch
+            epoch_count += 1
+            self.saveModel(epoch_count, validation_losses)
+            print(datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "- finished epoch", epoch_count)     
 
     def validate(self) -> Tuple[dict, float]:
         """
@@ -94,11 +151,13 @@ class PreTrainer:
         """
         self.model.eval()
         running_loss = 0.0
+        progress_bar = tqdm(range(len(self.test_loader)))
         with torch.no_grad():
             for batch in self.validation_loader:
                 batch = self.batchToGPU(batch)
-                logits = self.model(input_ids=batch["input_ids"], attention_mask=batch["attention_mask"], pixel_values=batch["pixel_values"])
-                running_loss += self.loss_fcn(logits, batch["label"]) # TODO
+                running_loss += self.model(**batch)["loss"].item()
+                progress_bar.update(1)
+        progress_bar.close()
         self.model.train()
         return running_loss.item()/len(self.validation_loader)
 
@@ -114,94 +173,33 @@ class PreTrainer:
 
         """
         print("Computing metrics for test dataset")
-
-
+        total_loss = 0.0
+        running_loss = 0.0
+        step = 0
         self.model.eval()
         progress_bar = tqdm(range(len(self.test_loader)))
         with torch.no_grad():
             for batch in self.test_loader:
                 batch = self.batchToGPU(batch)
-                logits = self.model(input_ids=batch["input_ids"], attention_mask=batch["attention_mask"], pixel_values=batch["pixel_values"])
-                running_loss += self.loss_fcn(logits, batch["label"]) # TODO
-            progress_bar.update(1)
-        return running_loss.item()/len(self.test_loader)
-    
-    '''
-    def train(self) -> None:
-        """
-        Training loop.
-        The training loop has two different stop conditions:
-            1) a limit of epochs is reached;
-            2) if the interval of epochs between the highest validation accuracy and current epoch is higher than a threshold (default is 3).
-            If the threshold value is 0 this stop condition is ignored.
-        Once the training loop is complete a log is saved.
-        """
-
-        # create log folder for the training session
-        self.log_folder_path = os.path.join("logs", self.dataset_name, self.run_name.replace(
-            " ", "_").replace(":", "_").replace("-", "_"))
-        os.makedirs(self.log_folder_path)
-
-        validation_metrics = {}
-        epoch_count = 1
-
-        # training loop
-        while epoch_count <= self.limit_epochs and self.trainPatience(validation_metrics):
-            epoch_start_time = datetime.now()
-            print(epoch_start_time.strftime("%Y-%m-%d %H:%M:%S"),
-                  "- Started epoch", epoch_count)
-            running_loss = 0.0
-            train_metrics = {"overall": datasets.load_metric("accuracy")}
-            for question_type in self.train_dataset.categories:
-                train_metrics[question_type] = datasets.load_metric("accuracy")
-            validation_metrics[epoch_count] = {}
-
-            epoch_progress = tqdm(range(len(self.train_loader)))
-            # train
-            for batch in self.train_loader:
-                batch = self.batchToGPU(batch)
-                self.optimizer.zero_grad(set_to_none=True)
-                logits = self.model(
-                    input_ids=batch["input_ids"], attention_mask=batch["attention_mask"], pixel_values=batch["pixel_values"])
-                loss = self.loss_fcn(logits, batch["label"])
-                loss.backward()
+                loss = self.model(**batch)["loss"].item()
                 running_loss += loss
-                self.optimizer.step()
-                predictions = torch.argmax(logits, dim=-1)
-                for (prediction, category, ground_truth) in zip(predictions, batch["category"], batch["label"]):
-                    train_metrics[category].add(
-                        prediction=prediction, reference=ground_truth)
-                    train_metrics["overall"].add(
-                        prediction=prediction, references=ground_truth)
-                epoch_progress.update(1)
-
-            # current training loss and accuracy for the epoch
-            to_log = {"epochs": epoch_count}
-            to_log["learning rate"] = self.lr_scheduler.optimizer.param_groups[0]["lr"]
-            for category in train_metrics:
-                to_log["train - " + category +
-                       " accuracy"] = train_metrics[category].compute()["accuracy"]
-            to_log["train - loss"] = running_loss.item()/len(self.train_loader)
-
-            # validate the training epoch
-            validation_metrics[epoch_count]["accuracy"], validation_metrics[epoch_count]["loss"] = self.validate(
-            )
-            to_log["validation - overall accuracy"] = validation_metrics[epoch_count]["accuracy"]
-            to_log["validation - loss"] = validation_metrics[epoch_count]["loss"]
-
-            # save the model state if this epoch has the current best model
-            self.saveModel(epoch_count, validation_metrics)
-            # update learning rate
-            self.lr_scheduler.step(validation_metrics[epoch_count]["loss"])
-            wandb.log(to_log)
-            epoch_finish_time = datetime.now()
-            epoch_progress.close()
-            print(epoch_finish_time.strftime("%Y-%m-%d %H:%M:%S"),
-                  "- Finished epoch", epoch_count)
-            epoch_count += 1
+                total_loss += loss
+                if step % self.logging_steps == 0 and step > 0:
+                    wandb.log({"test/loss": running_loss/self.logging_steps})
+                    running_loss = 0.0
+                step += 1
+                progress_bar.update(1)
+        progress_bar.close()
+        wandb.run.summary["average test loss"] = total_loss/len(self.dataset_loader)
+   
+    def run(self):
+        print(datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "- started run")     
+        self.train()
         self.test()
-
-    '''
+        print(datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "- finished run")     
+    
+    
+    
     def testing(self):
         batch = next(iter(self.train_loader))
         batch = self.batchToGPU(batch)
@@ -211,14 +209,14 @@ class PreTrainer:
             save_image(batch["pixel_values"][1], image)
         with open(os.path.join("datasets", "NWPU-Captions", "processed_image_2.jpg"), "w") as image:
             save_image(batch["pixel_values"][2], image)
-        output = self.model(**batch)
+        print("loss value:", self.model(**batch)["loss"].item()) 
         print("end:")
-        print("\ttorch.cuda.memory_allocated: %fGB"%(torch.cuda.memory_allocated(0)/1024/1024/1024))
-        print("\ttorch.cuda.memory_reserved: %fGB"%(torch.cuda.memory_reserved(0)/1024/1024/1024))
-        print("loss:", output["loss"]) 
+        print("\ttorch.cuda.memory_allocated: %fMiB"%(torch.cuda.memory_allocated(0)/1024/1024))
+        print("\ttorch.cuda.memory_reserved: %fMiB"%(torch.cuda.memory_reserved(0)/1024/1024))
+        file_path = self.run_folder + "/cp-1"
+        print(file_path)
+        self.model.save_pretrained(file_path)
+
         exit()
 
 
-
-pre_trainer = PreTrainer()
-pre_trainer.testing()

@@ -2,7 +2,7 @@ import json
 import os
 from datetime import datetime
 from typing import Tuple, Union
-
+import Models
 import datasets
 import torch
 import wandb
@@ -54,10 +54,9 @@ class Trainer:
             pass
 
         if model == "baseline":
-            from Models.Baseline import CLIPxRSVQA
+            self.model = Models.Baseline(num_labels=self.train_dataset.num_labels, model_aspect_ratio=(1,32)) # model aspect ratio = (n_layers, n_heads)
         elif model == "patching":
-            from Models.Patching import CLIPxRSVQA
-        self.model = CLIPxRSVQA(num_labels=self.train_dataset.num_labels, model_aspect_ratio=(1,32)) # model aspect ratio = (n_layers, n_heads)
+            self.model = Models.Patching(num_labels=self.train_dataset.num_labels, model_aspect_ratio=(1,32)) # model aspect ratio = (n_layers, n_heads)
         self.model.name = model
         if load_model:
             self.load_model(model_path)
@@ -332,7 +331,6 @@ class Trainer:
 
         validation_metrics = {}
         epoch_count = 1
-
         # training loop
         while epoch_count <= self.limit_epochs and self.trainPatience(validation_metrics):
             epoch_start_time = datetime.now()
