@@ -1,10 +1,8 @@
 import os
 import utils
 import h5py
-from PIL import Image
 import pandas as pd
 import json
-from tqdm.auto import tqdm
 
 encodings_path = os.path.join("datasets", "RSVQAxBEN", "rsvqaxben_encodings.json")
 

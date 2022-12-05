@@ -12,7 +12,7 @@ import wandb
 import shutil
 
 class PreTrainer:
-    def __init__(self, batch_size, limit_epochs, patience, lr_patience, device):
+    def __init__(self, batch_size: int, limit_epochs: int, patience: int, lr_patience: int, device: torch.device):
         self.run_config = {
                 "batch size": 3, # TODO change this to batch_size
                 "limit epochs": limit_epochs,
@@ -22,7 +22,7 @@ class PreTrainer:
                 "dataset": "NWPU-Captions",
                 "logging steps": 50}
 
-        self.run_name = f"bs{self.run_config['batch size']:d}-lr{self.run_config['initial learning rate']:.0e}-lr_p{self.run_config['learning rate patience']:d}-adamw"
+        self.run_name = f"bs{self.run_config['batch size']:d}-lr{self.run_config['initial learning rate']:.0e}-lrp{self.run_config['learning rate patience']:d}-adamw"
         wandb.init(project="CLIPxRSVQA", job_type="pre-train", name=self.run_name, config=self.run_config)
         self.run_name = f"{wandb.run.id:s}-{self.run_name:s}"
         self.run_folder = os.path.join("saved-models", self.run_config["dataset"], self.run_name)
@@ -146,18 +146,15 @@ class PreTrainer:
                 step += 1
                 progress_bar.update(1)
 
-
             progress_bar.close()
-
             # validate
             validation_losses[epoch_count] = self.validate()
             self.lr_scheduler.step(validation_losses[epoch_count]) # update learning rate
-
             # finished epoch
             wandb.log({"epochs": epoch_count})
-            epoch_count += 1
             self.saveModel(epoch_count, validation_losses)
             print(datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "- finished epoch", epoch_count)     
+            epoch_count += 1
 
     def validate(self) -> float:
         """
@@ -234,6 +231,5 @@ class PreTrainer:
         for cp in os.listdir(self.run_folder):
             print("removing", os.path.join(self.run_folder, cp))
             shutil.rmtree(os.path.join(self.run_folder, cp))
-        exit()
 
 
