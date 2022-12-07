@@ -8,8 +8,8 @@ from Trainer import Trainer
 parser = argparse.ArgumentParser(description="Train and test the CLIPxRSVQA model.")
 parser.add_argument("--dataset", metavar="dataset", type=str,
                     help="name of the dataset: RSVQA-LR, RSVQA-HR, RSVQAxBEN", required=True)
-parser.add_argument("--batch", metavar="batchSize", type=int, help="batch size to be used during training", default=80)
-parser.add_argument("--model", metavar="model_path", type=str, help=".pth file to be loaded", default=None)
+parser.add_argument("--batch", metavar="batchSize", type=int, help="batch size to be used during testing", required=True)
+parser.add_argument("--model", metavar="model_path", type=str, help=".pth file to be loaded", required=True)
 
 args = parser.parse_args()
 args = {"batch_size": args.batch,

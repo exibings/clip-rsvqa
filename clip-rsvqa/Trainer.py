@@ -27,13 +27,14 @@ class Trainer:
             "model aspect ratio": (1, 32),
             "optimizer": "AdamW"
         }
-
         self.run_name = f"{dataset_name:s}:bs{self.run_config['batch size']:d}-lr{self.run_config['initial learning rate']:.0e}-\
                         lrp{self.run_config['learning rate patience']:d}-adamw"
         if load_model:
+            self.job_type = "eval"
             wandb.init(project="CLIPxRSVQA", job_type="eval",
                        name=self.run_name, config=self.run_config)
         else:
+            self.job_type = "train"
             wandb.init(project="CLIPxRSVQA", job_type="train",
                        name=self.run_name, config=self.run_config)
         self.run_name = f"{wandb.run.id:s}-{self.run_name:s}"
@@ -58,44 +59,50 @@ class Trainer:
             self.model.freeze_vision()
 
         if self.dataset_name == "RSVQA-LR":
-            self.train_dataset = H5Datasets.RsvqaDataset(os.path.join(
-                "datasets", "RSVQA-LR", "rsvqa_lr.h5"), "train", self.run_config["model architecture"])
+            self.train_dataset = H5Datasets.RsvqaDataset("RSVQA-LR", "train", self.run_config["model architecture"])
             self.train_loader = torch.utils.data.DataLoader(self.train_dataset, batch_size=self.batch_size,
                                                             shuffle=True, num_workers=6, pin_memory=True)
-            self.validation_dataset = H5Datasets.RsvqaDataset(os.path.join(
-                "datasets", "RSVQA-LR", "rsvqa_lr.h5"), "validation", self.run_config["model architecture"])
+            self.validation_dataset = H5Datasets.RsvqaDataset("RSVQA-LR", "validation", self.run_config["model architecture"])
             self.validation_loader = torch.utils.data.DataLoader(self.validation_dataset, batch_size=self.batch_size,
                                                                  shuffle=False, num_workers=6, pin_memory=True)
-            self.test_dataset = H5Datasets.RsvqaDataset(os.path.join(
-                "datasets", "RSVQA-LR", "rsvqa_lr.h5"), "test", self.run_config["model architecture"])
+            self.test_dataset = H5Datasets.RsvqaDataset("RSVQA-LR", "test", self.run_config["model architecture"])
             self.test_loader = torch.utils.data.DataLoader(self.test_dataset, batch_size=self.batch_size,
                                                            shuffle=False, num_workers=6, pin_memory=True)
-            self.encodings = json.load(open(os.path.join(
-                "datasets", "RSVQA-LR", "rsvqa_lr_encodings.json"), "r"))
+            metadata = json.load(open(os.path.join("datasets", "RSVQA-LR", "rsvqa_lr_metadata.json"), "r"))
+            self.id2label = metadata["id2label"]
+            self.label2id = metadata["label2id"]
 
         elif self.dataset_name == "RSVQA-HR":
-            self.train_dataset = H5Datasets.RsvqaDataset(os.path.join(
-                "datasets", "RSVQA-HR", "rsvqa_hr.h5"), "train", self.run_config["model architecture"])
+            self.train_dataset = H5Datasets.RsvqaDataset("RSVQA-HR", "train", self.run_config["model architecture"])
             self.train_loader = torch.utils.data.DataLoader(self.train_dataset, batch_size=self.batch_size,
                                                             shuffle=True, num_workers=6, pin_memory=True)
-            self.validation_dataset = H5Datasets.RsvqaDataset(os.path.join(
-                "datasets", "RSVQA-HR", "rsvqa_hr.h5"), "validation", self.run_config["model architecture"])
+            self.validation_dataset = H5Datasets.RsvqaDataset("RSVQA-HR", "validation", self.run_config["model architecture"])
             self.validation_loader = torch.utils.data.DataLoader(self.validation_dataset, batch_size=self.batch_size,
                                                                  shuffle=False, num_workers=6, pin_memory=True)
-            self.test_dataset = H5Datasets.RsvqaDataset(os.path.join(
-                "datasets", "RSVQA-HR", "rsvqa_hr.h5"), "test", self.run_config["model architecture"])
+            self.test_dataset = H5Datasets.RsvqaDataset("RSVQA-HR", "test", self.run_config["model architecture"])
             self.test_loader = torch.utils.data.DataLoader(self.test_dataset, batch_size=self.batch_size,
                                                            shuffle=False, num_workers=6, pin_memory=True)
-            self.test_phili_dataset = H5Datasets.RsvqaDataset(os.path.join(
-                "datasets", "RSVQA-HR", "rsvqa_hr.h5"), "test_phili", self.run_config["model architecture"])
+            self.test_phili_dataset = H5Datasets.RsvqaDataset("RSVQA-HR", "test_phili", self.run_config["model architecture"])
             self.test_phili_loader = torch.utils.data.DataLoader(self.test_phili_dataset, batch_size=self.batch_size,
                                                                  shuffle=False, num_workers=6, pin_memory=True)
-            self.encodings = json.load(open(os.path.join(
-                "datasets", "RSVQA-HR", "rsvqa_hr_encodings.json"), "r"))
+            metadata = json.load(open(os.path.join("datasets", "RSVQA-HR", "rsvqa_hr_metadata.json"), "r"))
+            self.id2label = metadata["id2label"]
+            self.label2id = metadata["label2id"]
 
         elif self.dataset_name == "RSVQAxBEN":
-            # TODO
-            pass
+            self.train_dataset = H5Datasets.RsvqaDataset("RSVQAxBEN", "train", self.run_config["model architecture"])
+            self.train_loader = torch.utils.data.DataLoader(self.train_dataset, batch_size=self.batch_size,
+                                                            shuffle=True, num_workers=6, pin_memory=True)
+            self.validation_dataset = H5Datasets.RsvqaDataset("RSVQAxBEN", "validation", self.run_config["model architecture"])
+            self.validation_loader = torch.utils.data.DataLoader(self.validation_dataset, batch_size=self.batch_size,
+                                                                 shuffle=False, num_workers=6, pin_memory=True)
+            self.test_dataset = H5Datasets.RsvqaDataset("RSVQAxBEN", "test", self.run_config["model architecture"])
+            self.test_loader = torch.utils.data.DataLoader(self.test_dataset, batch_size=self.batch_size,
+                                                           shuffle=False, num_workers=6, pin_memory=True)
+            metadata = json.load(open(os.path.join("datasets", "RSVQA-HR", "rsvqa_hr_metadata.json"), "r"))
+            metadata = json.load(open(os.path.join("datasets", "RSVQAxBEN", "rsvqaxben_metadata.json"), "r"))
+            self.id2label = metadata["id2label"]
+            self.label2id = metadata["label2id"]        
 
         if self.run_config["model architecture"] == "baseline":
             # model aspect ratio = (n_layers, n_heads)
@@ -194,12 +201,12 @@ class Trainer:
                     # delete the previous best model
                     os.remove(os.path.join(
                         self.run_folder, model))
-            file_path = os.path.join(
+            self.model_path = os.path.join(
                 self.run_folder, f"cp-{current_epoch:d}")
-            wandb.run.summary["best model"] = file_path
+            wandb.run.summary["best model"] = self.model_path
             wandb.run.summary["best model epoch"] = current_epoch
-            torch.save({"label2id": self.encodings["label2id"], "id2label": self.encodings["id2label"],
-                       "model_state_dict": self.model.state_dict()}, file_path)
+            torch.save({"label2id": self.label2id, "id2label": self.id2label,
+                       "model_state_dict": self.model.state_dict()}, self.model_path)
 
     def test(self) -> Union[dict, tuple]:
         """
@@ -212,14 +219,15 @@ class Trainer:
             If not, only returns one dictionary with the performance metrics (accuracy) for the trainer's model with the test dataset.
 
         """
+        self.load_model(self.model_path)
         print("Computing metrics for test dataset")
         self.model.eval()
 
         metrics = {"overall": {"accuracy": Accuracy(
-            task="multiclass", num_classes=self.test_dataset.num_labels["total"])}}
+            task="multiclass", num_classes=self.test_dataset.num_possible_answers["total"])}}
         for question_type in self.test_dataset.categories:
             metrics[question_type] = {"accuracy": Accuracy(
-                task="multiclass", num_classes=self.test_dataset.num_labels[question_type])}
+                task="multiclass", num_classes=self.test_dataset.num_possible_answers[question_type])}
 
         progress_bar = tqdm(range(len(self.test_loader)))
         for batch in self.test_loader:
@@ -250,10 +258,10 @@ class Trainer:
             print(
                 "Computing metrics for test Philadelphia dataset")
             metrics_phili = {"overall": {"accuracy": Accuracy(
-                task="multiclass", num_classes=self.test_dataset.num_labels["total"])}}
+                task="multiclass", num_classes=self.test_dataset.num_possible_answers["total"])}}
             for question_type in self.test_dataset.categories:
                 metrics_phili[question_type] = {"accuracy": Accuracy(
-                    task="multiclass", num_classes=self.test_dataset.num_labels[question_type])}
+                    task="multiclass", num_classes=self.test_dataset.num_possible_answers[question_type])}
 
             progress_bar = tqdm(
                 range(len(self.test_phili_loader)))
@@ -291,7 +299,7 @@ class Trainer:
         """
         self.model.eval()
         metric = Accuracy(task="multiclass",
-                          num_classes=self.validation_dataset.num_labels["total"])
+                          num_classes=self.validation_dataset.num_possible_answers["total"])
         running_loss = 0.0
         with torch.no_grad():
             for batch in self.validation_loader:
@@ -322,10 +330,10 @@ class Trainer:
             print(datetime.now().strftime(
                 "%Y-%m-%d %H:%M:%S"), "- Started epoch", epoch_count)
             train_metrics = {"overall": {"accuracy": Accuracy(
-                task="multiclass", num_classes=self.train_dataset.num_labels["total"])}}
+                task="multiclass", num_classes=self.train_dataset.num_possible_answers["total"])}}
             for question_type in self.train_dataset.categories:
                 train_metrics[question_type] = {"accuracy": Accuracy(
-                    task="multiclass", num_classes=self.train_dataset.num_labels[question_type])}
+                    task="multiclass", num_classes=self.train_dataset.num_possible_answers[question_type])}
             validation_metrics[epoch_count] = {}
 
             epoch_progress = tqdm(
@@ -394,6 +402,7 @@ class Trainer:
                 "%Y-%m-%d %H:%M:%S"), "- Finished epoch", epoch_count)
             wandb.log({"epochs": epoch_count})
             epoch_count += 1
+    
 
     def run(self):
         """
@@ -401,7 +410,10 @@ class Trainer:
         """
         print(datetime.now().strftime(
             "%Y-%m-%d %H:%M:%S"), "- started run")
-        self.train()
-        self.test()
+        if self.job_type == "train":
+            self.train()
+            self.test()
+        elif self.job_type == "eval":
+            self.test()
         print(datetime.now().strftime(
             "%Y-%m-%d %H:%M:%S"), "- finished run")

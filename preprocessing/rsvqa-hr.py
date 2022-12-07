@@ -34,26 +34,36 @@ fig.savefig(os.path.join("datasets", "RSVQA-HR", "question_length_distribution.p
 
 trainDataset["label"] = trainDataset.apply(lambda x: utils.area_func(x["label"], x["category"]), axis="columns")
 trainDataset["label"] = trainDataset.apply(lambda x: utils.count_func(x["label"], x["category"]), axis="columns")
-validationDataset["label"] = validationDataset.apply(
-    lambda x: utils.area_func(x["label"], x["category"]), axis="columns")
-validationDataset["label"] = validationDataset.apply(
-    lambda x: utils.count_func(x["label"], x["category"]), axis="columns")
+validationDataset["label"] = validationDataset.apply(lambda x: utils.area_func(x["label"], x["category"]), axis="columns")
+validationDataset["label"] = validationDataset.apply(lambda x: utils.count_func(x["label"], x["category"]), axis="columns")
 testDataset["label"] = testDataset.apply(lambda x: utils.area_func(x["label"], x["category"]), axis="columns")
 testDataset["label"] = testDataset.apply(lambda x: utils.count_func(x["label"], x["category"]), axis="columns")
 testPhiliDataset["label"] = testPhiliDataset.apply(lambda x: utils.area_func(x["label"], x["category"]), axis="columns")
-testPhiliDataset["label"] = testPhiliDataset.apply(
-    lambda x: utils.count_func(x["label"], x["category"]), axis="columns")
+testPhiliDataset["label"] = testPhiliDataset.apply(lambda x: utils.count_func(x["label"], x["category"]), axis="columns")
 
 label2id, id2label = utils.encodeDatasetLabels("RSVQA-HR", trainDataset, validationDataset, testDataset, testPhiliDataset)
-encodings = {"label2id": label2id, "id2label": id2label}
-with open(os.path.join("datasets", "RSVQA-HR", "rsvqa_hr_encodings.json"), "w") as encodings_file:
-    json.dump(encodings, encodings_file)
-with open(os.path.join("datasets", "RSVQA-HR", "rsvqa_hr_id2label.json"), "w") as id2label_file:
-    json.dump(id2label, id2label_file)
 trainDataset.replace(label2id, inplace=True)
 validationDataset.replace(label2id, inplace=True)
 testDataset.replace(label2id, inplace=True)
 testPhiliDataset.replace(label2id, inplace=True)
+
+num_labels = {}
+# this is computed with the validation dataset because its a small split that covers all the possible answers
+for category, label in zip(validationDataset["category"], validationDataset["label"]):
+    try: 
+        num_labels[category].add(label)
+        num_labels["total"].add(label)  
+    except KeyError:
+        num_labels[category] = set()
+        num_labels["total"] = set() 
+        num_labels[category].add(label)
+        num_labels["total"].add(label)  
+for key in num_labels:
+    num_labels[key] = len(num_labels[key])
+
+metadata = {"label2id": label2id, "id2label": id2label, "num_labels": num_labels}
+with open(os.path.join("datasets", "RSVQA-HR", "rsvqa_hr_metadata.json"), "w") as metadata_file:
+    json.dump(metadata, metadata_file)
 
 image_count = utils.jpgOnly("RSVQA-HR")
 if utils.verifyImages("RSVQA-HR"):

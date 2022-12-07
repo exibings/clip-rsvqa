@@ -39,13 +39,13 @@ class PreTrainer:
         self.lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, "min", patience=self.lr_patience)
         
         self.dataset_name = self.run_config["dataset"]
-        self.train_dataset = H5Datasets.NwpuCaptionsDataset(os.path.join("datasets", "NWPU-Captions", "nwpu_captions.h5"), "train")
+        self.train_dataset = H5Datasets.NwpuCaptionsDataset("NWPU-Captions", "train")
         self.train_loader = torch.utils.data.DataLoader(self.train_dataset, batch_size=self.batch_size, shuffle=False, num_workers=6, pin_memory=True)
-        self.validation_dataset = H5Datasets.NwpuCaptionsDataset(os.path.join("datasets", "NWPU-Captions", "nwpu_captions.h5"), "validation")
+        self.validation_dataset = H5Datasets.NwpuCaptionsDataset("NWPU-Captions", "validation")
         self.validation_loader = torch.utils.data.DataLoader(self.validation_dataset, batch_size=self.batch_size, shuffle=False, num_workers=6, pin_memory=True)
-        self.test_dataset = H5Datasets.NwpuCaptionsDataset(os.path.join("datasets", "NWPU-Captions", "nwpu_captions.h5"), "test")
+        self.test_dataset = H5Datasets.NwpuCaptionsDataset("NWPU-Captions", "test")
         self.test_loader = torch.utils.data.DataLoader(self.test_dataset, batch_size=self.batch_size, shuffle=False, num_workers=6, pin_memory=True)
-        self.encodings = json.load(open(os.path.join("datasets", "NWPU-Captions", "nwpu_captions_encodings.json"), "r"))
+        self.metadata = json.load(open(os.path.join("datasets", "NWPU-Captions", "nwpu_captions_metadata.json"), "r"))
 
         self.model.to(self.device)  # send model to GPU
 

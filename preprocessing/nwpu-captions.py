@@ -8,7 +8,6 @@ import spacy
 
 nlp = spacy.load('en_core_web_md')
 included_tags = {"NOUN", "ADJ", "NUM"}
-encodings_path = os.path.join("datasets", "NWPU-Captions", "nwpu_captions_encodings.json")
 
 trainDataset = {"class": [], "image": [], "caption": [], "filtered_caption": [], "sentid": []}
 testDataset = {"class": [], "image": [], "caption": [],  "filtered_caption": [], "sentid": []}
@@ -38,6 +37,27 @@ with open(os.path.join("datasets", "NWPU-Captions", "dataset_nwpu.json"), "r") a
                 trainDataset["sentid"].append(row["sentids_2"])
                 trainDataset["sentid"].append(row["sentids_3"])
                 trainDataset["sentid"].append(row["sentids_4"])
+            
+            elif row["split"] == "val":
+                if row["filename"] == "airplane_111.jpg":
+                    continue
+                valDataset["class"].extend(label for _ in range(5))
+                valDataset["image"].extend(row["filename"] for _ in range(5))
+                valDataset["caption"].append(row["raw"])
+                valDataset["filtered_caption"].append(' '.join([str(t.lemma_) for t in nlp(row["raw"]) if t.pos_ in included_tags]))
+                valDataset["caption"].append(row["raw_1"])
+                valDataset["filtered_caption"].append(' '.join([str(t.lemma_) for t in nlp(row["raw_1"]) if t.pos_ in included_tags]))
+                valDataset["caption"].append(row["raw_2"])
+                valDataset["filtered_caption"].append(' '.join([str(t.lemma_) for t in nlp(row["raw_2"]) if t.pos_ in included_tags]))
+                valDataset["caption"].append(row["raw_3"])
+                valDataset["filtered_caption"].append(' '.join([str(t.lemma_) for t in nlp(row["raw_3"]) if t.pos_ in included_tags]))
+                valDataset["caption"].append(row["raw_4"])
+                valDataset["filtered_caption"].append(' '.join([str(t.lemma_) for t in nlp(row["raw_4"]) if t.pos_ in included_tags]))
+                valDataset["sentid"].append(row["sentids"])
+                valDataset["sentid"].append(row["sentids_1"])
+                valDataset["sentid"].append(row["sentids_2"])
+                valDataset["sentid"].append(row["sentids_3"])
+                valDataset["sentid"].append(row["sentids_4"])
 
             elif row["split"] == "test":
                 if row["filename"] == "airplane_111.jpg":
@@ -61,40 +81,18 @@ with open(os.path.join("datasets", "NWPU-Captions", "dataset_nwpu.json"), "r") a
                 testDataset["sentid"].append(row["sentids_4"])
 
 
-            elif row["split"] == "val":
-                if row["filename"] == "airplane_111.jpg":
-                    continue
-                valDataset["class"].extend(label for _ in range(5))
-                valDataset["image"].extend(row["filename"] for _ in range(5))
-                valDataset["caption"].append(row["raw"])
-                valDataset["filtered_caption"].append(' '.join([str(t.lemma_) for t in nlp(row["raw"]) if t.pos_ in included_tags]))
-                valDataset["caption"].append(row["raw_1"])
-                valDataset["filtered_caption"].append(' '.join([str(t.lemma_) for t in nlp(row["raw_1"]) if t.pos_ in included_tags]))
-                valDataset["caption"].append(row["raw_2"])
-                valDataset["filtered_caption"].append(' '.join([str(t.lemma_) for t in nlp(row["raw_2"]) if t.pos_ in included_tags]))
-                valDataset["caption"].append(row["raw_3"])
-                valDataset["filtered_caption"].append(' '.join([str(t.lemma_) for t in nlp(row["raw_3"]) if t.pos_ in included_tags]))
-                valDataset["caption"].append(row["raw_4"])
-                valDataset["filtered_caption"].append(' '.join([str(t.lemma_) for t in nlp(row["raw_4"]) if t.pos_ in included_tags]))
-                valDataset["sentid"].append(row["sentids"])
-                valDataset["sentid"].append(row["sentids_1"])
-                valDataset["sentid"].append(row["sentids_2"])
-                valDataset["sentid"].append(row["sentids_3"])
-                valDataset["sentid"].append(row["sentids_4"])
-
     trainDataset = pd.DataFrame.from_dict(trainDataset)
-    testDataset = pd.DataFrame.from_dict(testDataset)
     valDataset = pd.DataFrame.from_dict(valDataset)
+    testDataset = pd.DataFrame.from_dict(testDataset)
     
-    class2id, id2class = utils.encodeDatasetLabels("NWPU-Captions", trainDataset=trainDataset, testDataset=testDataset)
+    class2id, id2class = utils.encodeDatasetLabels("NWPU-Captions", trainDataset=trainDataset, validationDataset=valDataset, testDataset=testDataset)
     encodings = {"class2id": class2id, "id2class": id2class}
-    with open(encodings_path, "w") as encodings_file:
-        json.dump(encodings, encodings_file)
+    with open(os.path.join("datasets", "NWPU-Captions", "nwpu_captions_metadata.json"), "w") as metadata_file:
+        json.dump(encodings, metadata_file)
     
     trainDataset.to_csv(os.path.join("datasets", "NWPU-Captions", "traindf.csv"), index=False)
     valDataset.to_csv(os.path.join("datasets", "NWPU-Captions", "valdf.csv"), index=False)
     testDataset.to_csv(os.path.join("datasets", "NWPU-Captions", "testdf.csv"), index=False)
-    exit()
     with h5py.File(os.path.join("datasets", "NWPU-Captions", "nwpu_captions.h5"), "w") as hfile:
         utils.createDatasetSplit("NWPU-Captions", hfile, "train", trainDataset, label2id_encodings=class2id)
         del trainDataset

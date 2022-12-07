@@ -9,7 +9,6 @@ from tqdm.auto import tqdm
 tokenizer = CLIPTokenizer.from_pretrained("flax-community/clip-rsicd-v2")
 feature_extractor = CLIPFeatureExtractor.from_pretrained("flax-community/clip-rsicd-v2")
 
-
 def jpgOnly(dataset_name: str) -> int:
     """
     Filters all dataset images to .jpg only.
@@ -36,7 +35,6 @@ def jpgOnly(dataset_name: str) -> int:
                 count += 1
         return count
 
-
 def verifyImages(dataset_name: str) -> bool:
     if dataset_name == "RSVQA-LR":
         print("Verifying RSVQA-LR images...")
@@ -53,7 +51,6 @@ def verifyImages(dataset_name: str) -> bool:
             total += images_checker[subfolder]
         return True if total == 590326 else False
 
-
 def patchImage(img_path: str) -> list:
     """
     Patches the image and returns the patches and original image
@@ -67,7 +64,6 @@ def patchImage(img_path: str) -> list:
     img = Image.open(img_path)
     return [img.crop((0, 0, img.width//2, img.height//2)), img.crop((img.width//2, 0, img.width, img.height//2)),
             img.crop((0, img.height//2, img.width//2, img.height)), img.crop((img.width//2, img.height//2, img.width, img.height)), img]
-
 
 def encodeDatasetLabels(dataset_name: str, trainDataset: pd.DataFrame = None, validationDataset: pd.DataFrame = None, testDataset: pd.DataFrame = None, testPhiliDataset: pd.DataFrame = None) -> tuple[dict, dict]:
     """
@@ -90,11 +86,10 @@ def encodeDatasetLabels(dataset_name: str, trainDataset: pd.DataFrame = None, va
         count += 1
     return label2id, id2label
 
-
 def createDatasetSplit(dataset_name, hfile, split, processed_dataframe, label2id_encodings = None):
     print("Creating", split, "split")
     hfile.create_group(split)
-    #tokenize dataset
+    # tokenize dataset
     if dataset_name in ("RSVQA-LR", "RSVQA-HR", "RSVQAxBEN"):
         max_text_length = min(tokenizer.model_max_length, processed_dataframe.question.str.len().max())
     
@@ -108,7 +103,7 @@ def createDatasetSplit(dataset_name, hfile, split, processed_dataframe, label2id
     elif dataset_name == "NWPU-Captions":
         processed_dataframe["input_ids"], processed_dataframe["attention_mask"] = processed_dataframe.apply(
             tokenizeText, args=(max_text_length, "caption"), result_type="expand", axis="columns").T.values
-    
+    # /tokenize dataset
     if dataset_name in ("RSVQA-LR", "RSVQA-HR"):
         hfile[split].create_dataset("img_id", data=processed_dataframe["img_id"])
         hfile[split].create_dataset("category", data=processed_dataframe["category"],
@@ -155,23 +150,21 @@ def createDatasetSplit(dataset_name, hfile, split, processed_dataframe, label2id
                                     max_text_length), np.int8)
 
     print("\tAdding processed input ids to the dataset...")
-    input_id_progress = tqdm(range(len(processed_dataframe["input_ids"])))
+    progress_bar = tqdm(range(len(processed_dataframe["input_ids"])))
     for idx in range(len(processed_dataframe["input_ids"])):
         hfile[split]["input_ids"][idx] = processed_dataframe["input_ids"][idx]
-        input_id_progress.update(1)
-    input_id_progress.close()
-    attention_mask_progress = tqdm(range(len(processed_dataframe["attention_mask"])))
+        progress_bar.update(1)
+    progress_bar.close()
+    progress_bar = tqdm(range(len(processed_dataframe["attention_mask"])))
     print("\tAdding processed attention masks to the dataset...")
     for idx in range(len(processed_dataframe["attention_mask"])):
         hfile[split]["attention_mask"][idx] = processed_dataframe["attention_mask"][idx]
-        attention_mask_progress.update(1)
-    attention_mask_progress.close()
-
+        progress_bar.update(1)
+    progress_bar.close()
 
 def tokenizeText(x, max_text_length, column):
     tokenized = tokenizer(x[column], padding="max_length", max_length=max_text_length, return_tensors="np")
     return tokenized["input_ids"], tokenized["attention_mask"]
-
 
 def count_func(x, cat):
     if cat == 'count':
@@ -191,7 +184,6 @@ def count_func(x, cat):
             return 'more than 1000'
     else:
         return x
-
 
 def area_func(x, cat):
     if cat == 'area':

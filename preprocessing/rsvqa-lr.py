@@ -35,12 +35,27 @@ testDataset["label"] = testDataset.apply(lambda x: utils.area_func(x["label"], x
 testDataset["label"] = testDataset.apply(lambda x: utils.count_func(x["label"], x["category"]), axis="columns")
 
 label2id, id2label = utils.encodeDatasetLabels("RSVQA-LR", trainDataset, validationDataset, testDataset)
-encodings = {"label2id": label2id, "id2label": id2label}
-with open(os.path.join("datasets", "RSVQA-LR", "rsvqa_lr_encodings.json"), "w") as encodings_file:
-    json.dump(encodings, encodings_file)
 trainDataset.replace(label2id, inplace=True)
 validationDataset.replace(label2id, inplace=True)
 testDataset.replace(label2id, inplace=True)
+
+num_labels = {}
+# this is computed with the validation dataset because its a small split that covers all the possible answers
+for category, label in zip(validationDataset["category"], validationDataset["label"]):
+    try: 
+        num_labels[category].add(label)
+        num_labels["total"].add(label)  
+    except KeyError:
+        num_labels[category] = set()
+        num_labels["total"] = set() 
+        num_labels[category].add(label)
+        num_labels["total"].add(label)  
+for key in num_labels:
+    num_labels[key] = len(num_labels[key])
+
+metadata = {"label2id": label2id, "id2label": id2label, "num_labels": num_labels}
+with open(os.path.join("datasets", "RSVQA-LR", "rsvqa_lr_metadata.json"), "w") as metadata_file:
+    json.dump(metadata, metadata_file)
 
 image_count = utils.jpgOnly("RSVQA-LR")
 if utils.verifyImages("RSVQA-LR"):
