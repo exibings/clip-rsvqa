@@ -4,6 +4,7 @@ from torchvision.transforms import (
     RandomHorizontalFlip,
     RandomVerticalFlip,
     RandomRotation,
+    ColorJitter,
     RandomResizedCrop,
 )
 from transformers import CLIPFeatureExtractor
@@ -35,6 +36,7 @@ class ImageProcessing(torch.nn.Module):
         self.augment_images = augment_images
         self.image_augmentation = torch.nn.Sequential(
             RandomHorizontalFlip(),
+            ColorJitter(),
             RandomVerticalFlip(),
             RandomRotation(degrees=(0, 10)),
             RandomResizedCrop([224,], scale=(0.9, 1.1), ratio=(0.9, 1.3333333333333333)),

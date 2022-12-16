@@ -338,7 +338,7 @@ class Trainer:
 
             epoch_progress = tqdm(
                 range(len(self.train_loader)))
-            # train loop
+            # per epoch loop
             running_loss = 0.0
             step = 0
             for batch in self.train_loader:
@@ -351,7 +351,7 @@ class Trainer:
                 loss.backward()
                 running_loss += loss
                 # gradient acummulation every 2 batches to match the same batch size for both model architecures
-                if self.run_config["model architecure"] == "patching" and step % 2 == 0 and step > 0: # TODO accumulation steps will have to be changed
+                if self.run_config["model architecure"] == "patching" and step % 2 == 0 and step > 0: # TODO needs to fixed lol
                     self.optimizer.step()
                 elif self.run_config["model architecure"] == "baseline":
                     self.optimizer.step()
@@ -395,8 +395,8 @@ class Trainer:
                 validation_metrics[epoch_count]["loss"])
 
             # save the model state if this epoch has the current best model
-            # finished epoch
             self.saveModel(epoch_count, validation_metrics)
+            # finish epoch
             epoch_progress.close()
             print(datetime.now().strftime(
                 "%Y-%m-%d %H:%M:%S"), "- Finished epoch", epoch_count)
