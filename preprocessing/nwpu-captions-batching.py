@@ -2,8 +2,7 @@ import os
 import json
 import pandas as pd
 from tqdm.auto import tqdm
-from random import uniform
-from itertools import combinations
+from random import uniform, sample
 import spacy
 
 nlp = spacy.load('en_core_web_md')
@@ -12,19 +11,16 @@ dataset_folder =  os.path.join("datasets", "NWPU-Captions")
 encodings = json.load(open(os.path.join(dataset_folder, "nwpu_captions_metadata.json"), "r"))
 class2id = encodings["class2id"]
 id2class = encodings["id2class"]
-dataset = pd.read_csv(os.path.join(dataset_folder, "traindf.csv"))
-
 BATCH_SIZE = len(class2id) * 2
-N_BATCHES = len(dataset) * 2 // BATCH_SIZE
-LOW_SIMILARITY = 1
-HIGH_SIMILARITY = 0
+SAME_CLASS_THRESHOLD = 0.665
+DIFF_CLASS_THRESHOLD = 0.665
 
 def addSample(batch: dict, sample: dict) -> dict:
-    batch["sentid"].append(sample["sentid"][0])
-    batch["class"].append(sample["class"][0])
-    batch["image"].append(sample["image"][0])
-    batch["caption"].append(sample["caption"][0])
-    batch["filtered_caption"].append(sample["filtered_caption"][0])
+    batch["sentid"].append(sample["sentid"].item())
+    batch["class"].append(sample["class"].item())
+    batch["image"].append(sample["image"].item())
+    batch["caption"].append(sample["caption"].item())
+    batch["filtered_caption"].append(sample["filtered_caption"].item())
     return batch
 
 def compute_similarity(caption1, caption2):
@@ -52,54 +48,137 @@ def get_filtered_captions_by_class(batch: dict, fixed_class:str) -> list[str]:
             result.append(filtered_caption)
     return result
 
-batch_counter = 0
-progress_bar = tqdm(range(N_BATCHES))
-batches = []
-while batch_counter < N_BATCHES:
+def batching1(dataset: pd.DataFrame) -> dict:
     batch = {"sentid": [], "class": [], "image":[], "caption": [], "filtered_caption": []}
-    starting_sample = dataset.sample().to_dict(orient="list")
+    starting_sample = dataset.sample()
     batch = addSample(batch, starting_sample)
     sample_counter = 1
     while sample_counter < BATCH_SIZE:
         sample_found = False
         if uniform(0, 1) >= 0.5:
             # new sample from a class already in the batch - needs to have LOW similarity with the captions from that same class in the batch
+            threshold = SAME_CLASS_THRESHOLD
+            patience = 0
             while not sample_found:
-                # new sample from a class already in the batch
-                filtered_dataset = dataset[dataset["class"].isin(batch["class"])]
-                sample = filtered_dataset.sample().to_dict(orient="list")
-                caption_pairs = generate_pairs(sample["filtered_caption"][0], get_filtered_captions_by_class(batch, sample["class"][0]))
-                # TODO adicionar patience para os thresholds - acho que é só fazer um isto dentro de um loop e contar as iterações até ter sample found
-                if compute_avg_similarity(caption_pairs) < LOW_SIMILARITY:
+                # new sample from a class already in the batch but no repeat
+                filtered_dataset = dataset[(dataset["class"].isin(batch["class"])) & ~(dataset["sentid"].isin(batch["sentid"]))]
+                sample = filtered_dataset.sample()
+                caption_pairs = generate_pairs(sample["filtered_caption"].item(), get_filtered_captions_by_class(batch, sample["class"].item()))
+                if compute_avg_similarity(caption_pairs) < threshold:
                     # low average similarity with all the captions from the same class
                     batch = addSample(batch, sample)
                     sample_found = True
-
-
+                    patience = 0
+                else:
+                    patience += 1
+                if patience == 5:
+                    threshold += 0.05
+                    patience = 0
         else:
             # new sample from a class NOT in the batch - needs to have HIGH similarity with one of the captions from the batch
+            threshold = DIFF_CLASS_THRESHOLD
+            patience = 0
             while not sample_found:
                 # new sample from a class NOT in the batch
                 filtered_dataset = dataset[~dataset["class"].isin(batch["class"])]
                 if len(filtered_dataset) == 0:
                     # all the classes are in the batch. instead try to find samples from images that are not in the batch
-                    print("all classes in the batch!")
                     filtered_dataset = dataset[~dataset["image"].isin(batch["image"])]
-                # TODO adicionar patience para os thresholds - acho que é só fazer um isto dentro de um loop e contar as iterações até ter sample found
-                sample = filtered_dataset.sample().to_dict(orient="list")
-                caption_pairs = generate_pairs(sample["filtered_caption"][0], [caption for caption in batch["filtered_caption"]])
+                sample = filtered_dataset.sample()
+                caption_pairs = generate_pairs(sample["filtered_caption"].item(), [caption for caption in batch["filtered_caption"]])
                 computed_similarities = compute_similarities(caption_pairs)
-                if any(similarity > HIGH_SIMILARITY for similarity in computed_similarities):
+                if any(similarity > threshold for similarity in computed_similarities):
                     # high similarity with one the captions from the batch
                     batch = addSample(batch, sample)
                     sample_found = True
+                    patience = 0
+                else:
+                    patience += 1
+                if patience == 5:
+                    threshold -= 0.05
+                    patience = 0
         sample_counter += 1
-        print("samples:", sample_counter)
+    return batch
 
-    batches.append(batch)
-    batch_counter += 1
-    progress_bar.update(1)
+def batching2(dataset: pd.DataFrame) -> dict:
+    batch = {"sentid": [], "class": [], "image":[], "caption": [], "filtered_caption": []}
+    for _class in sample(sorted(class2id), len(class2id)):
+        # new sample from a new class - needs to have HIGH similarity with any of the other samples already in the batch
+        filtered_dataset = dataset[dataset["class"] == _class]
+        sample_found = False
+        threshold = DIFF_CLASS_THRESHOLD
+        patience = 0
+        while not sample_found:
+            _sample = filtered_dataset.sample()
+            caption_pairs = generate_pairs(_sample["filtered_caption"].item(), [caption for caption in batch["filtered_caption"]])
+            computed_similarities = compute_similarities(caption_pairs)
+            if any(similarity > threshold for similarity in computed_similarities) or len(computed_similarities) == 0:
+                # high similarity with one the captions from the batch
+                batch = addSample(batch, _sample)
+                sample_found = True
+            else:
+                patience += 1
+            if patience == 5:
+                threshold -= 0.05
+                patience = 0
+        
+        # second sample from the new class - needs to have LOW similarity with previous sample from the same class
+        filtered_dataset = filtered_dataset[filtered_dataset["sentid"] != _sample["sentid"].item()]
+        sample_found = False
+        threshold = SAME_CLASS_THRESHOLD
+        patience = 0
+        while not sample_found:
+            _sample = filtered_dataset.sample()
+            caption_pairs = generate_pairs(_sample["filtered_caption"].item(), get_filtered_captions_by_class(batch, _sample["class"].item()))
+            if compute_avg_similarity(caption_pairs) < threshold:
+                # low average similarity with all the captions from the same class
+                batch = addSample(batch, _sample)
+                sample_found = True
+                patience = 0
+            else:
+                patience += 1
+            if patience == 5:
+                threshold += 0.05
+                patience = 0
+    return batch
+
+def generate_batches(split, dataset):
+    n_batches = len(dataset) * 2 // BATCH_SIZE
+    batch_counter = 0
+    progress_bar = tqdm(range(n_batches), desc="Generating " + split + " batches")
+    batches1 = []
+    batches2 = []
+    while batch_counter < n_batches:
+        batches1.append(batching1(dataset))
+        batches2.append(batching2(dataset))
+        batch_counter += 1
+        progress_bar.update(1)
+    progress_bar.close()
+    flat_batches_1 = {"sentid": [], "class": [], "image": [], "caption": [], "filtered_caption": []}
+    for batch in batches1:
+        for key in batch:
+            flat_batches_1[key] += batch[key]
+    batches1 = pd.DataFrame.from_dict(flat_batches_1)
+    flat_batches_2 = {"sentid": [], "class": [], "image": [], "caption": [], "filtered_caption": []}
+    for batch in batches2:
+        for key in batch:
+            flat_batches_2[key] += batch[key]
+    batches2 = pd.DataFrame.from_dict(flat_batches_2)
+    batches1.to_csv(os.path.join("datasets", "NWPU-Captions", split + "_batching1" + ".csv"))
+    batches2.to_csv(os.path.join("datasets", "NWPU-Captions", split + "_batching2" + ".csv"))
 
 
-print("n batches:", len(batches))
+train_dataset = pd.read_csv(os.path.join(dataset_folder, "traindf.csv"), index_col="sentid")
+train_dataset["sentid"] = train_dataset.index
+train_dataset = train_dataset.drop([14283])
+val_dataset = pd.read_csv(os.path.join(dataset_folder, "valdf.csv"), index_col="sentid")
+val_dataset["sentid"] = val_dataset.index
+test_dataset = pd.read_csv(os.path.join(dataset_folder, "testdf.csv"), index_col="sentid")
+test_dataset["sentid"] = test_dataset.index
+test_dataset = test_dataset.drop([52202])
+
+generate_batches("train", train_dataset)
+generate_batches("val", val_dataset)
+generate_batches("test", test_dataset)
+
 
