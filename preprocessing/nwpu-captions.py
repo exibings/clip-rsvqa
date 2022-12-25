@@ -89,14 +89,3 @@ with open(os.path.join("datasets", "NWPU-Captions", "dataset_nwpu.json"), "r") a
     encodings = {"class2id": class2id, "id2class": id2class}
     with open(os.path.join("datasets", "NWPU-Captions", "nwpu_captions_metadata.json"), "w") as metadata_file:
         json.dump(encodings, metadata_file)
-    
-    trainDataset.to_csv(os.path.join("datasets", "NWPU-Captions", "traindf.csv"), index=False)
-    valDataset.to_csv(os.path.join("datasets", "NWPU-Captions", "valdf.csv"), index=False)
-    testDataset.to_csv(os.path.join("datasets", "NWPU-Captions", "testdf.csv"), index=False)
-    with h5py.File(os.path.join("datasets", "NWPU-Captions", "nwpu_captions.h5"), "w") as hfile:
-        utils.createDatasetSplit("NWPU-Captions", hfile, "train", trainDataset, label2id_encodings=class2id)
-        del trainDataset
-        utils.createDatasetSplit("NWPU-Captions", hfile, "validation", valDataset, label2id_encodings=class2id)
-        del valDataset
-        utils.createDatasetSplit("NWPU-Captions", hfile, "test", testDataset, label2id_encodings=class2id)
-        del testDataset

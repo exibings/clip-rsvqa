@@ -9,8 +9,9 @@ dependencies:
   - pytorch
   - torchvision
   - transformers=4.17
+  - evaluate
+  - scikit-learn
   - pandas
-  - torchmetrics
   - h5py
   - spacy
   - ftfy

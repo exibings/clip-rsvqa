@@ -28,8 +28,8 @@ fig.savefig(os.path.join("datasets", "RSVQAxBEN", "question_length_distribution.
 
 label2id, id2label = utils.encodeDatasetLabels("RSVQAxBEN", trainDataset, validationDataset, testDataset)
 num_labels = {}
-# this is computed with the validation dataset because its a small split that covers all the possible answers
-for category, label in zip(validationDataset["category"], validationDataset["label"]):
+merged_df = pd.concat([trainDataset, validationDataset, testDataset])
+for category, label in zip(merged_df["category"], merged_df["label"]):
     try: 
         num_labels[category].add(label)
         num_labels["total"].add(label)  

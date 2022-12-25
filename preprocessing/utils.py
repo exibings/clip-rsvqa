@@ -92,71 +92,53 @@ def createDatasetSplit(dataset_name, hfile, split, processed_dataframe, label2id
     # tokenize dataset
     if dataset_name in ("RSVQA-LR", "RSVQA-HR", "RSVQAxBEN"):
         max_text_length = min(tokenizer.model_max_length, processed_dataframe.question.str.len().max())
-    
     elif dataset_name == "NWPU-Captions":
         max_text_length = min(tokenizer.model_max_length, processed_dataframe.caption.str.len().max())
     print("\tTokenizing text...")
     if dataset_name in ("RSVQA-LR", "RSVQA-HR", "RSVQAxBEN"):
         processed_dataframe["input_ids"], processed_dataframe["attention_mask"] = processed_dataframe.apply(
             tokenizeText, args=(max_text_length, "question"), result_type="expand", axis="columns").T.values
-    
     elif dataset_name == "NWPU-Captions":
         processed_dataframe["input_ids"], processed_dataframe["attention_mask"] = processed_dataframe.apply(
             tokenizeText, args=(max_text_length, "caption"), result_type="expand", axis="columns").T.values
     # /tokenize dataset
     if dataset_name in ("RSVQA-LR", "RSVQA-HR"):
         hfile[split].create_dataset("img_id", data=processed_dataframe["img_id"])
-        hfile[split].create_dataset("category", data=processed_dataframe["category"],
-                                    dtype=h5py.special_dtype(vlen=str))
+        hfile[split].create_dataset("category", data=processed_dataframe["category"], dtype=h5py.special_dtype(vlen=str))
         hfile[split].create_dataset("label", data=processed_dataframe["label"])
-        hfile[split].create_dataset("question", data=processed_dataframe["question"],
-                                    dtype=h5py.special_dtype(vlen=str))
+        hfile[split].create_dataset("question", data=processed_dataframe["question"], dtype=h5py.special_dtype(vlen=str))
         hfile[split].create_dataset("input_ids", (len(processed_dataframe["input_ids"]), max_text_length), np.int32)
-        hfile[split].create_dataset("attention_mask", (len(
-            processed_dataframe["attention_mask"]), max_text_length), np.int8)
-    
+        hfile[split].create_dataset("attention_mask", (len(processed_dataframe["attention_mask"]), max_text_length), np.int8)
     elif dataset_name == "RSVQAxBEN":
         print("\tAdding img ids to the dataset...")
         hfile[split].create_dataset("img_id", data=processed_dataframe["img_id"])
         print("\tAdding categories to the dataset...")
-        hfile[split].create_dataset("category", data=processed_dataframe["category"],
-                                    dtype=h5py.special_dtype(vlen=str))       
+        hfile[split].create_dataset("category", data=processed_dataframe["category"], dtype=h5py.special_dtype(vlen=str))       
         print("\tAdding encoded labels to the dataset...")
-        hfile[split].create_dataset("label", (len(processed_dataframe["label"]),), np.int16)
+        hfile[split].create_dataset("label", (len(processed_dataframe["label"]),), np.int64)
         for idx in range(len(processed_dataframe["label"])):
             hfile[split]["label"][idx] = label2id_encodings[processed_dataframe["label"][idx]]
         print("\tAdding questions to the dataset...")
-        hfile[split].create_dataset("question", data=processed_dataframe["question"],
-                                    dtype=h5py.special_dtype(vlen=str))
-        
-        hfile[split].create_dataset("input_ids", (len(processed_dataframe["input_ids"]),
-                                    max_text_length), np.int32)
-        hfile[split].create_dataset("attention_mask", (len(processed_dataframe["attention_mask"]),
-                                    max_text_length), np.int8)
-    
+        hfile[split].create_dataset("question", data=processed_dataframe["question"], dtype=h5py.special_dtype(vlen=str))
+        hfile[split].create_dataset("input_ids", (len(processed_dataframe["input_ids"]), max_text_length), np.int32)
+        hfile[split].create_dataset("attention_mask", (len(processed_dataframe["attention_mask"]), max_text_length), np.int8)
     elif dataset_name == "NWPU-Captions":
         hfile[split].create_dataset("img_id", data=processed_dataframe["image"], dtype=h5py.special_dtype(vlen=str))
         hfile[split].create_dataset("class", (len(processed_dataframe["class"]),), np.int8)
         for idx in range(len(processed_dataframe["class"])):
             hfile[split]["class"][idx] = label2id_encodings[processed_dataframe["class"][idx]]
         hfile[split].create_dataset("sent_id", data=processed_dataframe["sentid"])
-        hfile[split].create_dataset("caption", data=processed_dataframe["caption"],
-                                    dtype=h5py.special_dtype(vlen=str))
-        hfile[split].create_dataset("filtered_caption", data=processed_dataframe["filtered_caption"],
-                                    dtype=h5py.special_dtype(vlen=str))
-        hfile[split].create_dataset("input_ids", (len(processed_dataframe["input_ids"]),
-                                    max_text_length), np.int32)
-        hfile[split].create_dataset("attention_mask", (len(processed_dataframe["attention_mask"]),
-                                    max_text_length), np.int8)
+        hfile[split].create_dataset("caption", data=processed_dataframe["caption"], dtype=h5py.special_dtype(vlen=str))
+        hfile[split].create_dataset("filtered_caption", data=processed_dataframe["filtered_caption"], dtype=h5py.special_dtype(vlen=str))
+        hfile[split].create_dataset("input_ids", (len(processed_dataframe["input_ids"]), max_text_length), np.int32)
+        hfile[split].create_dataset("attention_mask", (len(processed_dataframe["attention_mask"]), max_text_length), np.int8)
 
-    print("\tAdding processed input ids to the dataset...")
-    progress_bar = tqdm(range(len(processed_dataframe["input_ids"])))
+    progress_bar = tqdm(range(len(processed_dataframe["input_ids"])), desc="Adding processed input ids to the dataset...")
     for idx in range(len(processed_dataframe["input_ids"])):
         hfile[split]["input_ids"][idx] = processed_dataframe["input_ids"][idx]
         progress_bar.update(1)
     progress_bar.close()
-    progress_bar = tqdm(range(len(processed_dataframe["attention_mask"])))
-    print("\tAdding processed attention masks to the dataset...")
+    progress_bar = tqdm(range(len(processed_dataframe["attention_mask"])), desc="Adding processed attention masks to the dataset")
     for idx in range(len(processed_dataframe["attention_mask"])):
         hfile[split]["attention_mask"][idx] = processed_dataframe["attention_mask"][idx]
         progress_bar.update(1)

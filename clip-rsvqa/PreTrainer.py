@@ -12,19 +12,20 @@ import wandb
 import shutil
 
 class PreTrainer:
-    def __init__(self, batch_size: int, limit_epochs: int, patience: int, lr_patience: int, device: torch.device):
+    def __init__(self, limit_epochs: int, patience: int, lr_patience: int, device: torch.device):
         self.run_config = {
-                "batch size": 3, # TODO change this to batch_size
+                "batch size": 90, # n_classes * 2
                 "limit epochs": limit_epochs,
                 "patience": patience,
                 "initial learning rate": 5e-5,
                 "learning rate patience": lr_patience,
                 "dataset": "NWPU-Captions",
-                "logging steps": 50}
-
-        self.run_name = f"bs{self.run_config['batch size']:d}-lr{self.run_config['initial learning rate']:.0e}-lrp{self.run_config['learning rate patience']:d}-adamw"
+                "logging steps": 10
+        }
+        self.run_name = f"{self.run_config['dataset']:s}:bs{self.run_config['batch size']:d}-lr{self.run_config['initial learning rate']:.0e}-lrp{self.run_config['learning rate patience']:d}-p{self.run_config['patience']:d}-adamw"
         wandb.init(project="CLIPxRSVQA", job_type="pre-train", name=self.run_name, config=self.run_config)
         self.run_name = f"{wandb.run.id:s}-{self.run_name:s}"
+        wandb.run.name = self.run_name
         self.run_folder = os.path.join("saved-models", self.run_config["dataset"], self.run_name)
         os.makedirs(self.run_folder)
         self.model = CLIPModel.from_pretrained("flax-community/clip-rsicd-v2")
@@ -60,7 +61,6 @@ class PreTrainer:
             A dictionary with keys: `input_ids`, `attention_mask` and `pixel_values` ready to be fed to the CLIP Model.
         """
         processed_batch = {"return_loss": True}
-        print("original images used:", batch["img_id"][:3])
         processed_batch["input_ids"] = batch["input_ids"].to(self.device, non_blocking=True) 
         processed_batch["attention_mask"] = batch["attention_mask"].to(self.device, non_blocking=True) 
         processed_batch["pixel_values"] = batch["pixel_values"].to(self.device, non_blocking=True)
@@ -77,7 +77,7 @@ class PreTrainer:
             Epoch that corresponds to the lowest validation loss.
         """
         if validation_losses != {}:
-            return max(validation_losses.values())
+            return max(validation_losses, key=lambda epoch: validation_losses[epoch])
         else:
             return -1
 
@@ -94,9 +94,10 @@ class PreTrainer:
                 # delete the previous best model
                 shutil.rmtree(os.path.join(self.run_folder, cp))
             # save the current model
-            file_path = os.path.join(self.run_folder, f"cp-{current_epoch:d}")
-            wandb.run.summary["best model"] = file_path
-            self.model.save_pretrained(file_path)
+            self.checkpoint_path = os.path.join(self.run_folder, f"cp-{current_epoch:d}")
+            wandb.run.summary["best model"] = self.checkpoint_path
+            wandb.run.summary["best model epoch"] = current_epoch
+            self.model.save_pretrained(self.checkpoint_path)
     
     def trainPatience(self, validation_losses: dict[int, float]) -> bool:
         """
@@ -125,8 +126,7 @@ class PreTrainer:
         validation_losses = {}
         
         while epoch_count <= self.limit_epochs and self.trainPatience(validation_losses):
-            print(datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "- started epoch", epoch_count)     
-            progress_bar = tqdm(range(len(self.train_loader)))
+            progress_bar = tqdm(range(len(self.train_loader)), desc=datetime.now().strftime("%Y-%m-%d %H:%M:%S") + " - epoch "+ str(epoch_count))
             # train loop
             running_loss = 0.0
             step = 0
@@ -136,16 +136,14 @@ class PreTrainer:
                 self.optimizer.zero_grad(set_to_none=True)
                 loss = self.model(**batch)["loss"]
                 running_loss += loss.item()
-                total_loss += running_loss
                 loss.backward()
                 self.optimizer.step()
                 # /train step
                 if step % self.logging_steps == 0 and step > 0:
-                    wandb.log({"train/loss": running_loss/self.logging_steps})
+                    wandb.log({"train/clip loss": running_loss/self.logging_steps})
                     running_loss = 0.0
                 step += 1
                 progress_bar.update(1)
-
             progress_bar.close()
             # validate
             validation_losses[epoch_count] = self.validate()
@@ -153,7 +151,6 @@ class PreTrainer:
             # finished epoch
             wandb.log({"epochs": epoch_count})
             self.saveModel(epoch_count, validation_losses)
-            print(datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "- finished epoch", epoch_count)     
             epoch_count += 1
 
     def validate(self) -> float:
@@ -165,16 +162,13 @@ class PreTrainer:
         """
         self.model.eval()
         running_loss = 0.0
-        progress_bar = tqdm(range(len(self.test_loader)))
         with torch.no_grad():
             for batch in self.validation_loader:
                 batch = self.batchToGPU(batch)
                 running_loss += self.model(**batch)["loss"].item()
-                progress_bar.update(1)
-        progress_bar.close()
         self.model.train()
-        average_loss = running_loss.item()/len(self.validation_loader)
-        wandb.log({"validation/loss": average_loss}, commit=False)
+        average_loss = running_loss/len(self.validation_loader)
+        wandb.log({"validation/clip loss": average_loss}, commit=False)
         return average_loss
 
     def test(self) -> None:
@@ -182,12 +176,13 @@ class PreTrainer:
         Computes the average loss of the model over the test dataset and logs the running loss after `self.logging_steps` steps. 
         At the end updates the run summary with the average test loss.
         """
-        print("Computing metrics for test dataset")
         total_loss = 0.0
         running_loss = 0.0
         step = 0
+        self.model = CLIPModel.from_pretrained(self.checkpoint_path)
+        self.model.to(self.device)  # send model to GPU
         self.model.eval()
-        progress_bar = tqdm(range(len(self.test_loader)))
+        progress_bar = tqdm(range(len(self.test_loader)), desc="Computing metrics for test dataset")
         with torch.no_grad():
             for batch in self.test_loader:
                 batch = self.batchToGPU(batch)
@@ -195,12 +190,12 @@ class PreTrainer:
                 running_loss += loss
                 total_loss += loss
                 if step % self.logging_steps == 0 and step > 0:
-                    wandb.log({"test/loss": running_loss/self.logging_steps})
+                    wandb.log({"test/clip loss": running_loss/self.logging_steps})
                     running_loss = 0.0
                 step += 1
                 progress_bar.update(1)
         progress_bar.close()
-        wandb.run.summary["average test loss"] = total_loss/len(self.dataset_loader)
+        wandb.run.summary["test/average clip loss"] = total_loss/len(self.test_loader)
    
     def run(self):
         """
