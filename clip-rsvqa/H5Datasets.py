@@ -47,8 +47,8 @@ class RsvqaDataset(torch.utils.data.Dataset):
         return self.dataset_len
 
 class RsvqaBenDataset(torch.utils.data.Dataset):
-    def __init__(self, dataset_name, split, model_type):
-        self.folder = os.path.join("datasets", dataset_name)
+    def __init__(self, split, model_type):
+        self.folder = os.path.join("datasets", "RSVQAxBEN")
         self.dataset = None
         self.split = split
         self.model_type = model_type
@@ -84,16 +84,17 @@ class RsvqaBenDataset(torch.utils.data.Dataset):
         return self.dataset_len
 
 class NwpuCaptionsDataset(torch.utils.data.Dataset):
-    def __init__(self, dataset_name, split):
-        self.folder = os.path.join("datasets", dataset_name)
+    def __init__(self, file_name, split, augment_images = False):
+        self.folder = os.path.join("datasets", "NWPU-Captions")
         self.dataset = None
         self.split = split
-        self.image_processing = utils.ImageProcessing(augment_images=True)
-        self.h5_file_name = "nwpu_captions.h5"
+        self.image_processing = utils.ImageProcessing(augment_images)
+        self.h5_file_name = file_name
         self.h5_file_path = os.path.join(self.folder,  self.h5_file_name)
         with h5py.File(os.path.join(self.folder, self.h5_file_name), 'r') as file:
-            assert len(file[self.split]["img_id"]) == len(file[self.split]["class"]) == len(file[self.split]["caption"]) == len(file[self.split]["sent_id"]) == len(file[self.split]["input_ids"]) == len(file[self.split]["attention_mask"]), "non matching number of entries in .h5 file."
-            self.dataset_len = len(file[self.split]["img_id"])
+            assert len(file[self.split]["img_id"]) == len(file[self.split]["image"]) == len(file[self.split]["class"]) == len(file[self.split]["caption"]) == len(file[self.split]["filtered_caption"]) == len(
+                file[self.split]["sent_id"]) == len(file[self.split]["input_ids"]) == len(file[self.split]["attention_mask"]), "non matching number of entries in .h5 file."
+            self.dataset_len = len(file[self.split]["sent_id"])
             self.num_classes = len(np.unique(file[self.split]["class"]))
             self.num_images = len(np.unique(file[self.split]["img_id"]))
 
@@ -101,7 +102,8 @@ class NwpuCaptionsDataset(torch.utils.data.Dataset):
         if self.dataset is None:
             self.dataset = h5py.File(self.h5_file_path, 'r')
         output = {}
-        output["img_id"] = self.dataset[self.split + "/img_id"][idx].decode("utf-8")
+        output["img_id"] = self.dataset[self.split + "/img_id"][idx]
+        output["image"] = self.dataset[self.split + "/img_id"][idx].decode("utf-8")
         output["class"] = self.dataset[self.split + "/class"][idx]
         output["caption"] = self.dataset[self.split + "/caption"][idx].decode("utf-8")
         output["filtered_caption"] = self.dataset[self.split + "/filtered_caption"][idx].decode("utf-8")
@@ -113,3 +115,4 @@ class NwpuCaptionsDataset(torch.utils.data.Dataset):
 
     def __len__(self):
         return self.dataset_len
+      

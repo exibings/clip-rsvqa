@@ -50,7 +50,10 @@ def verifyImages(dataset_name: str) -> bool:
             images_checker[subfolder] = len(os.listdir(os.path.join("datasets", "RSVQAxBEN", "images", subfolder)))
             total += images_checker[subfolder]
         return True if total == 590326 else False
-
+    elif dataset_name == "NWPU-Captions":
+        print("Verifying NWPU-Captions image...")
+        return True if len(os.listdir(os.path.join("datasets", "NWPU-Captions", "images"))) == 31499 else False # this value should be 31500 but the dataset is missing 1 image - airplane_111.jpg
+        
 def patchImage(img_path: str) -> list:
     """
     Patches the image and returns the patches and original image
@@ -123,7 +126,8 @@ def createDatasetSplit(dataset_name, hfile, split, processed_dataframe, label2id
         hfile[split].create_dataset("input_ids", (len(processed_dataframe["input_ids"]), max_text_length), np.int32)
         hfile[split].create_dataset("attention_mask", (len(processed_dataframe["attention_mask"]), max_text_length), np.int8)
     elif dataset_name == "NWPU-Captions":
-        hfile[split].create_dataset("img_id", data=processed_dataframe["image"], dtype=h5py.special_dtype(vlen=str))
+        hfile[split].create_dataset("img_id", data=processed_dataframe["img_id"])
+        hfile[split].create_dataset("image", data=processed_dataframe["image"], dtype=h5py.special_dtype(vlen=str))
         hfile[split].create_dataset("class", (len(processed_dataframe["class"]),), np.int8)
         for idx in range(len(processed_dataframe["class"])):
             hfile[split]["class"][idx] = label2id_encodings[processed_dataframe["class"][idx]]
@@ -132,7 +136,6 @@ def createDatasetSplit(dataset_name, hfile, split, processed_dataframe, label2id
         hfile[split].create_dataset("filtered_caption", data=processed_dataframe["filtered_caption"], dtype=h5py.special_dtype(vlen=str))
         hfile[split].create_dataset("input_ids", (len(processed_dataframe["input_ids"]), max_text_length), np.int32)
         hfile[split].create_dataset("attention_mask", (len(processed_dataframe["attention_mask"]), max_text_length), np.int8)
-
     progress_bar = tqdm(range(len(processed_dataframe["input_ids"])), desc="Adding processed input ids to the dataset...")
     for idx in range(len(processed_dataframe["input_ids"])):
         hfile[split]["input_ids"][idx] = processed_dataframe["input_ids"][idx]

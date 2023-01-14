@@ -3,8 +3,8 @@ import torch
 from transformers import CLIPModel
 
 class Baseline(CLIPModel):
-    def __init__(self, num_labels: int, model_aspect_ratio: dict):
-        clip_model = CLIPModel.from_pretrained("flax-community/clip-rsicd-v2")
+    def __init__(self, num_labels: int, model_aspect_ratio: dict, pretrained_path: str):
+        clip_model = CLIPModel.from_pretrained(pretrained_path)
         super().__init__(clip_model.config)
         self.new_encoder_layer = torch.nn.TransformerEncoderLayer(d_model=512, nhead=model_aspect_ratio["n_heads"])
         self.new_transformer_encoder = torch.nn.TransformerEncoder(self.new_encoder_layer, num_layers=model_aspect_ratio["n_layers"])
@@ -74,8 +74,8 @@ class Baseline(CLIPModel):
 
 
 class Patching(CLIPModel):
-    def __init__(self, num_labels: int, model_aspect_ratio: dict):
-        clip_model = CLIPModel.from_pretrained("flax-community/clip-rsicd-v2")
+    def __init__(self, num_labels: int, model_aspect_ratio: dict, pretrained_path: str):
+        clip_model = CLIPModel.from_pretrained(pretrained_path)
         super().__init__(clip_model.config)
         self.text_model = clip_model.text_model
         self.aspect_ratio = model_aspect_ratio

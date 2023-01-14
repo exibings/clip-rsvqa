@@ -18,6 +18,8 @@ parser.add_argument("--freeze", metavar="freeze", type=int,
                     help="flag to freeze CLIP Vision: 1 to freeze, 0 to NOT freeze", required=True, choices=[0, 1])
 parser.add_argument("--architecture", metavar="architecture", type=str,
                     help="model to be used", required=True, choices=["baseline", "patching"])
+parser.add_argument("--pretrained", metavar="pretrained", type=int,
+                    help="flag to use the pretrained CLIP weights: 1 to use custom, 0 to use CLIP-RSCID", required=True, choices=[0, 1])
 
 
 args = parser.parse_args()
@@ -27,7 +29,8 @@ args = {"limit_epochs": args.epochs,
         "lr_patience": args.lr_patience,
         "freeze": True if args.freeze == 1 else False,
         "dataset_name": args.dataset,
-        "model_type": args.architecture}
+        "model_type": args.architecture,
+        "pretrained": True if args.pretrained == 1 else False}
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 

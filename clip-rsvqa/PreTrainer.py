@@ -1,28 +1,25 @@
 import json
 import os
 from datetime import datetime
-from typing import Tuple, Union
-
 import H5Datasets
 import torch
 from tqdm.auto import tqdm
 from transformers import CLIPModel
-from torchvision.utils import save_image
 import wandb
-import shutil
+import math
 
 class PreTrainer:
-    def __init__(self, limit_epochs: int, patience: int, lr_patience: int, device: torch.device):
+    def __init__(self, device: torch.device):
         self.run_config = {
                 "batch size": 90, # n_classes * 2
-                "limit epochs": limit_epochs,
-                "patience": patience,
-                "initial learning rate": 5e-5,
-                "learning rate patience": lr_patience,
+                "limit epochs": 1,
+                "initial learning rate": 1e-8,
+                "peak learning rate": 1e-5,
                 "dataset": "NWPU-Captions",
-                "logging steps": 10
+                "logging steps": 20,
+                "learning rate warmup fraction": 0.05
         }
-        self.run_name = f"{self.run_config['dataset']:s}:bs{self.run_config['batch size']:d}-lr{self.run_config['initial learning rate']:.0e}-lrp{self.run_config['learning rate patience']:d}-p{self.run_config['patience']:d}-adamw"
+        self.run_name = f"{self.run_config['dataset']:s}:blr{self.run_config['initial learning rate']:.0e}-plr{self.run_config['peak learning rate']:.0e}-wf{int(self.run_config['learning rate warmup fraction']*100):d}-adamw"
         wandb.init(project="CLIPxRSVQA", job_type="pre-train", name=self.run_name, config=self.run_config)
         self.run_name = f"{wandb.run.id:s}-{self.run_name:s}"
         wandb.run.name = self.run_name
@@ -33,21 +30,21 @@ class PreTrainer:
         self.device = device
         self.batch_size = self.run_config["batch size"]
         self.limit_epochs = self.run_config["limit epochs"]
-        self.patience = self.run_config["patience"]
         self.lr = self.run_config["initial learning rate"]
-        self.lr_patience = self.run_config["learning rate patience"]
-        self.optimizer = torch.optim.AdamW(self.model.parameters(), lr=self.lr)
-        self.lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, "min", patience=self.lr_patience)
-        
+        self.optimizer = torch.optim.AdamW(self.model.parameters(), lr=self.lr, betas=(0.9, 0.98))
         self.dataset_name = self.run_config["dataset"]
-        self.train_dataset = H5Datasets.NwpuCaptionsDataset("NWPU-Captions", "train")
+        self.train_dataset = H5Datasets.NwpuCaptionsDataset("nwpu_captions_bigger.h5", "train", augment_images=True)
         self.train_loader = torch.utils.data.DataLoader(self.train_dataset, batch_size=self.batch_size, shuffle=False, num_workers=6, pin_memory=True)
-        self.validation_dataset = H5Datasets.NwpuCaptionsDataset("NWPU-Captions", "validation")
+        self.validation_dataset = H5Datasets.NwpuCaptionsDataset("nwpu_captions_bigger.h5", "validation", augment_images=True)
         self.validation_loader = torch.utils.data.DataLoader(self.validation_dataset, batch_size=self.batch_size, shuffle=False, num_workers=6, pin_memory=True)
-        self.test_dataset = H5Datasets.NwpuCaptionsDataset("NWPU-Captions", "test")
+        self.test_dataset = H5Datasets.NwpuCaptionsDataset("nwpu_captions_bigger.h5", "test", augment_images=True)
         self.test_loader = torch.utils.data.DataLoader(self.test_dataset, batch_size=self.batch_size, shuffle=False, num_workers=6, pin_memory=True)
         self.metadata = json.load(open(os.path.join("datasets", "NWPU-Captions", "nwpu_captions_metadata.json"), "r"))
-
+        self.lr_scheduler = torch.optim.lr_scheduler.CyclicLR(self.optimizer, 
+                                                            step_size_up=math.floor(self.run_config["learning rate warmup fraction"]*(len(self.train_loader))), 
+                                                            step_size_down=math.floor((1-self.run_config["learning rate warmup fraction"])*len(self.train_loader)), 
+                                                            base_lr=self.run_config["initial learning rate"], 
+                                                            max_lr=self.run_config["peak learning rate"], cycle_momentum=False)
         self.model.to(self.device)  # send model to GPU
 
     def batchToGPU(self, batch: dict) -> dict:
@@ -55,7 +52,7 @@ class PreTrainer:
         Sends batch to GPU.
 
         Args:
-            batch (dict): batch to be sent to GPU.
+            `batch` (dict): batch to be sent to GPU.
 
         Returns:
             A dictionary with keys: `input_ids`, `attention_mask` and `pixel_values` ready to be fed to the CLIP Model.
@@ -65,23 +62,8 @@ class PreTrainer:
         processed_batch["attention_mask"] = batch["attention_mask"].to(self.device, non_blocking=True) 
         processed_batch["pixel_values"] = batch["pixel_values"].to(self.device, non_blocking=True)
         return processed_batch
-    
-    def getBestModel(self, validation_losses: dict[int, float]) -> int:
-        """
-        Returns which epoch has the lowest validation loss.
 
-        Args:
-            `validation_losses` (dict): map of `<#epoch, validation loss>`.
-
-        Returns:
-            Epoch that corresponds to the lowest validation loss.
-        """
-        if validation_losses != {}:
-            return max(validation_losses, key=lambda epoch: validation_losses[epoch])
-        else:
-            return -1
-
-    def saveModel(self, current_epoch: int, validation_losses: dict[int, float]) -> None:
+    def saveModel(self, current_epoch: int) -> None:
         """
         Updates the currently saved models to only keep the current best model
         
@@ -89,43 +71,21 @@ class PreTrainer:
             `current_epoch` (int): epoch of the model that it is being saved.
             `validation_losses` dict[int, float]: map of <#epoch, validation loss>.
         """
-        if self.getBestModel(validation_losses) == current_epoch:
-            for cp in os.listdir(self.run_folder):
-                # delete the previous best model
-                shutil.rmtree(os.path.join(self.run_folder, cp))
-            # save the current model
-            self.checkpoint_path = os.path.join(self.run_folder, f"cp-{current_epoch:d}")
-            wandb.run.summary["best model"] = self.checkpoint_path
-            wandb.run.summary["best model epoch"] = current_epoch
-            self.model.save_pretrained(self.checkpoint_path)
-    
-    def trainPatience(self, validation_losses: dict[int, float]) -> bool:
-        """
-        Verifies if `self.patience` epochs have passed since the current best epoch.
-        
-        Args:
-            `validation_losses` (dict[int, float]): map of `<#epoch, validation loss>`.
-
-        Returns:
-            `True` if `self.patience` epochs have passed since the current best epoch, otherwise returns `False`.
-        """
-        highest_validation_epoch = self.getBestModel(validation_losses)
-        if highest_validation_epoch == -1 or self.patience == 0:
-            return True
-        else:
-            return len(validation_losses) <= highest_validation_epoch + self.patience
+        self.checkpoint_path = os.path.join(self.run_folder, f"cp-{current_epoch:d}")
+        wandb.run.summary["best model"] = self.checkpoint_path
+        self.model.save_pretrained(self.checkpoint_path)
 
     def train(self) -> None:
         """
         Train function that will iterate over the training dataset, back-propagate the loss and step the optimizer. 
-        After iterating through the entire dataset (1 epoch), computes the validation loss and steps the learning rate scheduler.
-        The main train loop is finished when the current epoch exceeds `self.limit_epochs` or the `self.trainPatience` returns `False`.
-        Updates the current saved models after each epoch. 
+        During train the learning rate will follow a Cyclic strategy, increasing from its base level to its peak value. 
+        After reaching the peak the learning rate will start decreasing until the end of the train loop.
+        The main train loop is finished when the current epoch exceeds `self.limit_epochs`.
+        Saves the trained model after finishing the main loop. 
         """
         epoch_count = 1
-        validation_losses = {}
         
-        while epoch_count <= self.limit_epochs and self.trainPatience(validation_losses):
+        while epoch_count <= self.limit_epochs:
             progress_bar = tqdm(range(len(self.train_loader)), desc=datetime.now().strftime("%Y-%m-%d %H:%M:%S") + " - epoch "+ str(epoch_count))
             # train loop
             running_loss = 0.0
@@ -140,36 +100,15 @@ class PreTrainer:
                 self.optimizer.step()
                 # /train step
                 if step % self.logging_steps == 0 and step > 0:
-                    wandb.log({"train/clip loss": running_loss/self.logging_steps})
+                    wandb.log({"train/clip loss": running_loss/self.logging_steps, "learning rate": self.lr_scheduler.optimizer.param_groups[0]["lr"]})
                     running_loss = 0.0
                 step += 1
+                self.lr_scheduler.step() # update learning rate
                 progress_bar.update(1)
             progress_bar.close()
-            # validate
-            validation_losses[epoch_count] = self.validate()
-            self.lr_scheduler.step(validation_losses[epoch_count]) # update learning rate
             # finished epoch
-            wandb.log({"epochs": epoch_count})
-            self.saveModel(epoch_count, validation_losses)
+            self.saveModel(epoch_count)
             epoch_count += 1
-
-    def validate(self) -> float:
-        """
-        Computes the average loss of the model over the validation dataset and logs the average validation loss. 
-
-        Returns:
-            Average loss of the model over the validation dataset.
-        """
-        self.model.eval()
-        running_loss = 0.0
-        with torch.no_grad():
-            for batch in self.validation_loader:
-                batch = self.batchToGPU(batch)
-                running_loss += self.model(**batch)["loss"].item()
-        self.model.train()
-        average_loss = running_loss/len(self.validation_loader)
-        wandb.log({"validation/clip loss": average_loss}, commit=False)
-        return average_loss
 
     def test(self) -> None:
         """
@@ -199,32 +138,9 @@ class PreTrainer:
    
     def run(self):
         """
-        Main loop. Trains the model and then evaluates it.
+        Run loop. Trains the model and then evaluates it.
         """
         print(datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "- started run")     
         self.train()
         self.test()
         print(datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "- finished run")     
-    
-    def testing(self):
-        batch = next(iter(self.train_loader))
-        batch = self.batchToGPU(batch)
-        with open(os.path.join("datasets", "NWPU-Captions", "processed_image_0.jpg"), "w") as image:
-            save_image(batch["pixel_values"][0], image)
-        with open(os.path.join("datasets", "NWPU-Captions", "processed_image_1.jpg"), "w") as image:
-            save_image(batch["pixel_values"][1], image)
-        with open(os.path.join("datasets", "NWPU-Captions", "processed_image_2.jpg"), "w") as image:
-            save_image(batch["pixel_values"][2], image)
-        print("loss value:", self.model(**batch)["loss"].item()) 
-        print("end:")
-        print("\ttorch.cuda.memory_allocated: %fMiB"%(torch.cuda.memory_allocated(0)/1024/1024))
-        print("\ttorch.cuda.memory_reserved: %fMiB"%(torch.cuda.memory_reserved(0)/1024/1024))
-        
-        file_path = os.path.join(self.run_folder, f"cp-{0:d}")
-        wandb.run.summary["best model"] = file_path
-        self.model.save_pretrained(file_path)
-        for cp in os.listdir(self.run_folder):
-            print("removing", os.path.join(self.run_folder, cp))
-            shutil.rmtree(os.path.join(self.run_folder, cp))
-
-

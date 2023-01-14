@@ -13,7 +13,6 @@ class2id = encodings["class2id"]
 id2class = encodings["id2class"]
 
 nlp = spacy.load('en_core_web_md')
-file_name = "nwpu_captions.h5"
 BATCH_SIZE = len(class2id) * 2
 SAME_CLASS_THRESHOLD = 0.665
 DIFF_CLASS_THRESHOLD = 0.665
@@ -51,7 +50,7 @@ def get_filtered_captions_by_class(batch: dict, fixed_class:str) -> list[str]:
             result.append(filtered_caption)
     return result
 
-def batching1(dataset: pd.DataFrame) -> dict:
+def batching_alt(dataset: pd.DataFrame) -> dict:
     batch = {"sentid": [], "class": [], "image":[], "caption": [], "filtered_caption": []}
     starting_sample = dataset.sample()
     batch = addSample(batch, starting_sample)
@@ -146,48 +145,40 @@ def batching2(dataset: pd.DataFrame) -> dict:
     return batch
 
 def generate_batches(split, dataset):
-    n_batches = len(dataset) * 2 // BATCH_SIZE
+    n_batches = 2 * (len(dataset) * 2 // BATCH_SIZE)
     batch_counter = 0
     progress_bar = tqdm(range(n_batches), desc="Generating " + split + " batches")
-    #batches1 = []
-    batches2 = []
+    batches = []
     while batch_counter < n_batches:
-    #    batches1.append(batching1(dataset))
-        batches2.append(batching2(dataset))
+        batches.append(batching2(dataset))
         batch_counter += 1
         progress_bar.update(1)
     progress_bar.close()
-    #flat_batches_1 = {"sentid": [], "class": [], "image": [], "caption": [], "filtered_caption": []}
-    #for batch in batches1:
-    #    for key in batch:
-    #        flat_batches_1[key] += batch[key]
-    #batches1 = pd.DataFrame.from_dict(flat_batches_1)
     flat_batches_2 = {"sentid": [], "class": [], "image": [], "caption": [], "filtered_caption": []}
-    for batch in batches2:
+    for batch in batches:
         for key in batch:
             flat_batches_2[key] += batch[key]
-    batches2 = pd.DataFrame.from_dict(flat_batches_2)
-    #batches1.to_csv(os.path.join("datasets", "NWPU-Captions", split + "_batching1" + ".csv"), index=False)
-    batches2.to_csv(os.path.join("datasets", "NWPU-Captions", split + "_batched2" + ".csv"), index=False)
+    batches = pd.DataFrame.from_dict(flat_batches_2)
+    batches.to_csv(os.path.join("datasets", "NWPU-Captions", split + "_batched_bigger" + ".csv"), index=False)
 
 
-#train_dataset = pd.read_csv(os.path.join(dataset_folder, "traindf.csv"), index_col="sentid")
-#train_dataset["sentid"] = train_dataset.index
-#train_dataset = train_dataset.drop([14283])
-#val_dataset = pd.read_csv(os.path.join(dataset_folder, "valdf.csv"), index_col="sentid")
-#val_dataset["sentid"] = val_dataset.index
-#test_dataset = pd.read_csv(os.path.join(dataset_folder, "testdf.csv"), index_col="sentid")
-#test_dataset["sentid"] = test_dataset.index
-#test_dataset = test_dataset.drop([52202])
+train_dataset = pd.read_csv(os.path.join(dataset_folder, "traindf.csv"), index_col="sentid")
+train_dataset["sentid"] = train_dataset.index
+train_dataset = train_dataset.drop([14283])
+val_dataset = pd.read_csv(os.path.join(dataset_folder, "valdf.csv"), index_col="sentid")
+val_dataset["sentid"] = val_dataset.index
+test_dataset = pd.read_csv(os.path.join(dataset_folder, "testdf.csv"), index_col="sentid")
+test_dataset["sentid"] = test_dataset.index
+test_dataset = test_dataset.drop([52202])
 
-#generate_batches("train", train_dataset)
-#generate_batches("val", val_dataset)
-#generate_batches("test", test_dataset)
-train_dataset = pd.read_csv(os.path.join(dataset_folder, "train_batched.csv"))
-val_dataset = pd.read_csv(os.path.join(dataset_folder, "val_batched.csv"))
-test_dataset = pd.read_csv(os.path.join(dataset_folder, "test_batched.csv"))
+generate_batches("train", train_dataset)
+generate_batches("val", val_dataset)
+generate_batches("test", test_dataset)
+train_dataset = pd.read_csv(os.path.join(dataset_folder, "train_batched_bigger.csv"))
+val_dataset = pd.read_csv(os.path.join(dataset_folder, "val_batched_bigger.csv"))
+test_dataset = pd.read_csv(os.path.join(dataset_folder, "test_batched_bigger.csv"))
 
-with h5py.File(os.path.join("datasets", "NWPU-Captions", "nwpu_captions.h5"), "w") as hfile:
+with h5py.File(os.path.join("datasets", "NWPU-Captions", "nwpu_captions_batched_bigger.h5"), "w") as hfile:
     utils.createDatasetSplit("NWPU-Captions", hfile, "train", train_dataset, label2id_encodings=class2id)
     del train_dataset
     utils.createDatasetSplit("NWPU-Captions", hfile, "validation", val_dataset, label2id_encodings=class2id)

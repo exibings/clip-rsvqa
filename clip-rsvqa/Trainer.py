@@ -12,7 +12,7 @@ import evaluate
 
 class Trainer:
     def __init__(self, batch_size: int, limit_epochs: int, patience: int, lr_patience: int, freeze: bool, dataset_name: str, model_type: str,
-                 device: torch.device, load_model: bool = False, model_path: str = None) -> None:
+                 device: torch.device, load_model: bool = False, model_path: str = None, pretrained: bool = False) -> None:
         self.run_config = {
             "batch size": batch_size,
             "limit epochs": limit_epochs,
@@ -20,11 +20,12 @@ class Trainer:
             "initial learning rate": 1e-4,
             "learning rate patience": lr_patience,
             "dataset": dataset_name,
-            "logging steps": 100,
+            "logging steps": 50,
             "freeze CLIP Vision": freeze,
             "model architecture": model_type,
             "model aspect ratio": {"n_layers": 1, "n_heads": 32},
-            "optimizer": "AdamW"
+            "optimizer": "AdamW",
+            "pretrain": "saved-models/NWPU-Captions/onzilt5a-NWPU-Captions:blr1e-08-plr1e-05-wf5-adamw/cp-1" if pretrained else "flax-community/clip-rsicd-v2"
         }
         self.run_name = f"{dataset_name:s}:bs{self.run_config['batch size']:d}-lr{self.run_config['initial learning rate']:.0e}-lrp{self.run_config['learning rate patience']:d}-p{self.run_config['patience']:d}-adamw"
         if load_model:
@@ -65,20 +66,20 @@ class Trainer:
             self.id2label = metadata["id2label"]
             self.label2id = metadata["label2id"]
         elif self.dataset_name == "RSVQAxBEN":
-            self.train_dataset = H5Datasets.RsvqaBenDataset("RSVQAxBEN", "train", self.run_config["model architecture"])
+            self.train_dataset = H5Datasets.RsvqaBenDataset("train", self.run_config["model architecture"])
             self.train_loader = torch.utils.data.DataLoader(self.train_dataset, batch_size=self.batch_size, shuffle=True, num_workers=6, pin_memory=True)
-            self.validation_dataset = H5Datasets.RsvqaBenDataset("RSVQAxBEN", "validation", self.run_config["model architecture"])
+            self.validation_dataset = H5Datasets.RsvqaBenDataset("validation", self.run_config["model architecture"])
             self.validation_loader = torch.utils.data.DataLoader(self.validation_dataset, batch_size=self.batch_size, shuffle=False, num_workers=6, pin_memory=True)
-            self.test_dataset = H5Datasets.RsvqaBenDataset("RSVQAxBEN", "test", self.run_config["model architecture"])
+            self.test_dataset = H5Datasets.RsvqaBenDataset("test", self.run_config["model architecture"])
             self.test_loader = torch.utils.data.DataLoader(self.test_dataset, batch_size=self.batch_size, shuffle=False, num_workers=6, pin_memory=True)
             metadata = json.load(open(os.path.join("datasets", "RSVQAxBEN", "rsvqaxben_metadata.json"), "r"))
             self.id2label = metadata["id2label"]
             self.label2id = metadata["label2id"]        
         # Initialize model
         if self.run_config["model architecture"] == "baseline":
-            self.model = Models.Baseline(num_labels=self.train_dataset.num_labels["total"], model_aspect_ratio=self.run_config["model aspect ratio"])
+            self.model = Models.Baseline(num_labels=self.train_dataset.num_labels["total"], model_aspect_ratio=self.run_config["model aspect ratio"], pretrained_path=self.run_config["pretrain"])
         elif self.run_config["model architecture"] == "patching":
-            self.model = Models.Patching(num_labels=self.train_dataset.num_labels["total"], model_aspect_ratio=self.run_config["model aspect ratio"])
+            self.model = Models.Patching(num_labels=self.train_dataset.num_labels["total"], model_aspect_ratio=self.run_config["model aspect ratio"], pretrained_path=self.run_config["pretrain"])
         self.model.name = self.run_config["model architecture"]
         self.limit_epochs = self.run_config["limit epochs"]
         self.patience = self.run_config["patience"]

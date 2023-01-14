@@ -1,91 +1,43 @@
 import os
-import json
-import pandas as pd
-import h5py
 import utils
-import spacy
+import h5py
+from PIL import Image
+import pandas as pd
+import json
+import matplotlib.pyplot as plt
+import numpy as np
 
+trainDataset = pd.read_csv(os.path.join("datasets", "NWPU-Captions", "traindf.csv"), sep=",")
+validationDataset = pd.read_csv(os.path.join("datasets", "NWPU-Captions", "valdf.csv"), sep=",")
+testDataset = pd.read_csv(os.path.join("datasets", "NWPU-Captions", "testdf.csv"), sep=",")
+merged_df = pd.concat([trainDataset, validationDataset, testDataset])
+class2id = json.load(open(os.path.join("datasets", "NWPU-Captions", "nwpu_captions_metadata.json"), "r"))["class2id"]
 
-nlp = spacy.load('en_core_web_md')
-included_tags = {"NOUN", "ADJ", "NUM"}
+max_text_length = min(utils.tokenizer.model_max_length, merged_df.caption.str.len().max())
 
-trainDataset = {"class": [], "image": [], "caption": [], "filtered_caption": [], "sentid": []}
-testDataset = {"class": [], "image": [], "caption": [],  "filtered_caption": [], "sentid": []}
-valDataset = {"class": [], "image": [], "caption": [],  "filtered_caption": [], "sentid": []}
-with open(os.path.join("datasets", "NWPU-Captions", "dataset_nwpu.json"), "r") as nwpu_file:
-    nwpu_data = json.load(nwpu_file)
-    
-    for label in nwpu_data:
-        for row in nwpu_data[label]:
-            if row["split"] == "train":
-                if row["filename"] == "airplane_111.jpg":
-                    continue
-                trainDataset["class"].extend(label for _ in range(5))
-                trainDataset["image"].extend(row["filename"] for _ in range(5))
-                trainDataset["caption"].append(row["raw"])
-                trainDataset["filtered_caption"].append(' '.join([str(t.lemma_) for t in nlp(row["raw"]) if t.pos_ in included_tags]))
-                trainDataset["caption"].append(row["raw_1"])
-                trainDataset["filtered_caption"].append(' '.join([str(t.lemma_) for t in nlp(row["raw_1"]) if t.pos_ in included_tags]))
-                trainDataset["caption"].append(row["raw_2"])
-                trainDataset["filtered_caption"].append(' '.join([str(t.lemma_) for t in nlp(row["raw_2"]) if t.pos_ in included_tags]))
-                trainDataset["caption"].append(row["raw_3"])
-                trainDataset["filtered_caption"].append(' '.join([str(t.lemma_) for t in nlp(row["raw_3"]) if t.pos_ in included_tags]))
-                trainDataset["caption"].append(row["raw_4"])
-                trainDataset["filtered_caption"].append(' '.join([str(t.lemma_) for t in nlp(row["raw_4"]) if t.pos_ in included_tags]))
-                trainDataset["sentid"].append(row["sentids"])
-                trainDataset["sentid"].append(row["sentids_1"])
-                trainDataset["sentid"].append(row["sentids_2"])
-                trainDataset["sentid"].append(row["sentids_3"])
-                trainDataset["sentid"].append(row["sentids_4"])
-            
-            elif row["split"] == "val":
-                if row["filename"] == "airplane_111.jpg":
-                    continue
-                valDataset["class"].extend(label for _ in range(5))
-                valDataset["image"].extend(row["filename"] for _ in range(5))
-                valDataset["caption"].append(row["raw"])
-                valDataset["filtered_caption"].append(' '.join([str(t.lemma_) for t in nlp(row["raw"]) if t.pos_ in included_tags]))
-                valDataset["caption"].append(row["raw_1"])
-                valDataset["filtered_caption"].append(' '.join([str(t.lemma_) for t in nlp(row["raw_1"]) if t.pos_ in included_tags]))
-                valDataset["caption"].append(row["raw_2"])
-                valDataset["filtered_caption"].append(' '.join([str(t.lemma_) for t in nlp(row["raw_2"]) if t.pos_ in included_tags]))
-                valDataset["caption"].append(row["raw_3"])
-                valDataset["filtered_caption"].append(' '.join([str(t.lemma_) for t in nlp(row["raw_3"]) if t.pos_ in included_tags]))
-                valDataset["caption"].append(row["raw_4"])
-                valDataset["filtered_caption"].append(' '.join([str(t.lemma_) for t in nlp(row["raw_4"]) if t.pos_ in included_tags]))
-                valDataset["sentid"].append(row["sentids"])
-                valDataset["sentid"].append(row["sentids_1"])
-                valDataset["sentid"].append(row["sentids_2"])
-                valDataset["sentid"].append(row["sentids_3"])
-                valDataset["sentid"].append(row["sentids_4"])
-
-            elif row["split"] == "test":
-                if row["filename"] == "airplane_111.jpg":
-                    continue
-                testDataset["class"].extend(label for _ in range(5))
-                testDataset["image"].extend(row["filename"] for _ in range(5))
-                testDataset["caption"].append(row["raw"])
-                testDataset["filtered_caption"].append(' '.join([str(t.lemma_) for t in nlp(row["raw"]) if t.pos_ in included_tags]))
-                testDataset["caption"].append(row["raw_1"])
-                testDataset["filtered_caption"].append(' '.join([str(t.lemma_) for t in nlp(row["raw_1"]) if t.pos_ in included_tags]))
-                testDataset["caption"].append(row["raw_2"])
-                testDataset["filtered_caption"].append(' '.join([str(t.lemma_) for t in nlp(row["raw_2"]) if t.pos_ in included_tags]))
-                testDataset["caption"].append(row["raw_3"])
-                testDataset["filtered_caption"].append(' '.join([str(t.lemma_) for t in nlp(row["raw_3"]) if t.pos_ in included_tags]))
-                testDataset["caption"].append(row["raw_4"])
-                testDataset["filtered_caption"].append(' '.join([str(t.lemma_) for t in nlp(row["raw_4"]) if t.pos_ in included_tags]))
-                testDataset["sentid"].append(row["sentids"])
-                testDataset["sentid"].append(row["sentids_1"])
-                testDataset["sentid"].append(row["sentids_2"])
-                testDataset["sentid"].append(row["sentids_3"])
-                testDataset["sentid"].append(row["sentids_4"])
-
-
-    trainDataset = pd.DataFrame.from_dict(trainDataset)
-    valDataset = pd.DataFrame.from_dict(valDataset)
-    testDataset = pd.DataFrame.from_dict(testDataset)
-    
-    class2id, id2class = utils.encodeDatasetLabels("NWPU-Captions", trainDataset=trainDataset, validationDataset=valDataset, testDataset=testDataset)
-    encodings = {"class2id": class2id, "id2class": id2class}
-    with open(os.path.join("datasets", "NWPU-Captions", "nwpu_captions_metadata.json"), "w") as metadata_file:
-        json.dump(encodings, metadata_file)
+image_count = utils.jpgOnly("NWPU-Captions") + 1 # plus 1 to make space for the missing image (airplane_111.jpg)
+if utils.verifyImages("NWPU-Captions"):
+    # create .h5 file
+    with h5py.File(os.path.join("datasets", "NWPU-Captions", "nwpu_captions.h5"), "w") as hfile:
+        utils.createDatasetSplit("NWPU-Captions", hfile, "train", trainDataset, class2id)
+        del trainDataset
+        utils.createDatasetSplit("NWPU-Captions", hfile, "validation", validationDataset, class2id)
+        del validationDataset
+        utils.createDatasetSplit("NWPU-Captions", hfile, "test", testDataset, class2id)
+        del testDataset
+        print("Processing class sentences and adding them to the dataset...")
+        class_sentence_input_ids = hfile.create_dataset("class_sentence_input_ids", (len(class2id), max_text_length), np.int32)
+        class_sentence_attention_mask = hfile.create_dataset("class_sentence_attention_mask", (len(class2id), max_text_length), np.int32)
+        for _class in class2id:
+            tokenized = utils.tokenizer(f"An aerial photograph of a {_class:s}", padding="max_length", max_length=max_text_length, return_tensors="np")
+            class_sentence_input_ids[class2id[_class]] = tokenized.input_ids
+            class_sentence_attention_mask[class2id[_class]] = tokenized.attention_mask
+        print("Processing images and adding them to the dataset...")
+        pixel_values = hfile.create_dataset("pixel_values", (image_count, 3, 224, 224), "float32")
+        images = os.listdir(os.path.join("datasets", "NWPU-Captions", "images"))
+        for image_name in images:
+            image = utils.feature_extractor(Image.open(os.path.join("datasets", "NWPU-Captions", "images", image_name)), return_tensors="np", resample=Image.Resampling.BILINEAR)
+            image_idx = merged_df[merged_df["image"] == image_name]["img_id"].unique()[0]
+            pixel_values[image_idx] = image.pixel_values
+else:
+    print("Missing images.")
