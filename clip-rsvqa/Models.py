@@ -1,6 +1,6 @@
 from copy import deepcopy
 import torch
-from transformers import CLIPModel
+from transformers import CLIPModel, CLIPProcessor
 
 class Baseline(CLIPModel):
     def __init__(self, num_labels: int, model_aspect_ratio: dict, pretrained_path: str):
@@ -186,3 +186,45 @@ class Patching(CLIPModel):
     def freeze_vision(self):
         for param in self.vision_model.parameters():
             param.requires_grad = False
+
+
+class CLIPRS(CLIPModel):
+    def __init__(self, max_seq_length: int, initial_pretrain_path: str):
+        clip_model = CLIPModel.from_pretrained(initial_pretrain_path)
+        super().__init__(clip_model.config)
+        processor = CLIPProcessor.from_pretrained(initial_pretrain_path)
+        processor.tokenizer.model_max_length = max_seq_length
+        processor.tokenizer.init_kwargs['model_max_length'] = max_seq_length
+        processor.tokenizer.name_or_path = "saved-models/clip-rs"
+        processor.tokenizer.init_kwargs['name_or_path'] = "saved-models/clip-rs"
+        
+        current_max_pos, embed_size = clip_model.text_model.embeddings.position_embedding.weight.shape
+        assert max_seq_length > current_max_pos
+        # allocate a larger position embedding matrix
+        new_pos_embed = clip_model.text_model.embeddings.position_embedding.weight.new_empty(max_seq_length, embed_size)
+        # copy position embeddings over and over to initialize the new position embeddings
+        k1 = 0
+        k2 = current_max_pos - 1
+        weight = 0.05
+        direction = -1
+        while k1 < max_seq_length:
+            new_pos_embed[k1] = clip_model.text_model.embeddings.position_embedding.weight[k2] + ( weight * clip_model.text_model.embeddings.position_embedding.weight[k2-1] )
+            k1 += 1
+            k2 += direction
+            if k2 == 32: 
+                weight *= 2
+                direction = 1
+            elif k2 == current_max_pos:
+                k2 = current_max_pos - 1
+                weight *= 2
+                direction = -1
+
+        clip_model.text_model.embeddings.position_embedding.weight.data = new_pos_embed
+        clip_model.text_model.embeddings.position_ids.data = torch.tensor([i for i in range(max_seq_length)]).reshape(1, max_seq_length)
+
+        clip_model.config.update({"_name_or_path": "saved-models/clip-rs"})
+        clip_model.text_model.config.update({"max_position_embeddings": max_seq_length})
+        clip_model.config.update({"text_config_dict": clip_model.text_model.config.to_diff_dict()})
+        clip_model.config.update({"vision_config_dict": clip_model.vision_model.config.to_diff_dict()})
+        clip_model.save_pretrained("saved-models/clip-rs")
+        processor.save_pretrained("saved-models/clip-rs")

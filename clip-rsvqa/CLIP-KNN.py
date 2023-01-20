@@ -6,7 +6,7 @@ import json
 import os
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-model_pretrain = "flax-community/clip-rsicd-v2"
+model_pretrain = "saved-models/NWPU-Captions/2cjgamc5-NWPU-Captions:blr0e+00-plr1e-06-wf10-adamw/cp-1"
 model = CLIPModel.from_pretrained(model_pretrain)
 model.eval()
 model.to(device)
@@ -44,7 +44,7 @@ for batch in dataset_loader:
     progress_bar.update(1)
 progress_bar.close()
 
-print(f"Accuracies for {model_pretrain}:")
+print(f"KNN performance for {model_pretrain}:")
 print("\tk=1:", accuracy["k=1"]/len(dataset))
 print("\tk=3:", accuracy["k=3"]/len(dataset))
 print("\tk=5:", accuracy["k=5"]/len(dataset))

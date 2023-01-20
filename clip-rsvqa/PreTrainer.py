@@ -8,6 +8,7 @@ from transformers import CLIPModel
 import wandb
 import math
 
+
 class PreTrainer:
     def __init__(self, device: torch.device):
         self.run_config = {
@@ -136,7 +137,7 @@ class PreTrainer:
         progress_bar.close()
         wandb.run.summary["test/average clip loss"] = total_loss/len(self.test_loader)
    
-    def run(self):
+    def run(self) -> None:
         """
         Run loop. Trains the model and then evaluates it.
         """
