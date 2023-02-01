@@ -3,6 +3,7 @@ import json
 import pandas as pd
 from tqdm.auto import tqdm
 from random import uniform, sample
+from transformers import CLIPTokenizer
 import spacy
 import h5py
 import utils
@@ -21,6 +22,7 @@ def addSample(batch: dict, sample: dict) -> dict:
     batch["sentid"].append(sample["sentid"].item())
     batch["class"].append(sample["class"].item())
     batch["image"].append(sample["image"].item())
+    batch["img_id"].append(sample["img_id"].item())
     batch["caption"].append(sample["caption"].item())
     batch["filtered_caption"].append(sample["filtered_caption"].item())
     return batch
@@ -51,7 +53,7 @@ def get_filtered_captions_by_class(batch: dict, fixed_class:str) -> list[str]:
     return result
 
 def batching_alt(dataset: pd.DataFrame) -> dict:
-    batch = {"sentid": [], "class": [], "image":[], "caption": [], "filtered_caption": []}
+    batch = {"sentid": [], "class": [], "image":[], "img_id": [], "caption": [], "filtered_caption": []}
     starting_sample = dataset.sample()
     batch = addSample(batch, starting_sample)
     sample_counter = 1
@@ -103,7 +105,7 @@ def batching_alt(dataset: pd.DataFrame) -> dict:
     return batch
 
 def batching2(dataset: pd.DataFrame) -> dict:
-    batch = {"sentid": [], "class": [], "image":[], "caption": [], "filtered_caption": []}
+    batch = {"sentid": [], "class": [], "image":[], "img_id": [], "caption": [], "filtered_caption": []}
     for _class in sample(sorted(class2id), len(class2id)):
         # new sample from a new class - needs to have HIGH similarity with any of the other samples already in the batch
         filtered_dataset = dataset[dataset["class"] == _class]
@@ -154,34 +156,20 @@ def generate_batches(split, dataset):
         batch_counter += 1
         progress_bar.update(1)
     progress_bar.close()
-    flat_batches_2 = {"sentid": [], "class": [], "image": [], "caption": [], "filtered_caption": []}
+    flat_batches_2 = {"sentid": [], "class": [], "image": [], "img_id": [], "caption": [], "filtered_caption": []}
     for batch in batches:
         for key in batch:
             flat_batches_2[key] += batch[key]
     batches = pd.DataFrame.from_dict(flat_batches_2)
-    batches.to_csv(os.path.join("datasets", "NWPU-Captions", split + "_batched_bigger" + ".csv"), index=False)
-
+    batches.to_csv(os.path.join("datasets", "NWPU-Captions", "batched", split + "_batched" + ".csv"), index=False)
 
 train_dataset = pd.read_csv(os.path.join(dataset_folder, "traindf.csv"), index_col="sentid")
 train_dataset["sentid"] = train_dataset.index
-train_dataset = train_dataset.drop([14283])
 val_dataset = pd.read_csv(os.path.join(dataset_folder, "valdf.csv"), index_col="sentid")
 val_dataset["sentid"] = val_dataset.index
 test_dataset = pd.read_csv(os.path.join(dataset_folder, "testdf.csv"), index_col="sentid")
 test_dataset["sentid"] = test_dataset.index
-test_dataset = test_dataset.drop([52202])
 
 generate_batches("train", train_dataset)
 generate_batches("val", val_dataset)
 generate_batches("test", test_dataset)
-train_dataset = pd.read_csv(os.path.join(dataset_folder, "train_batched_bigger.csv"))
-val_dataset = pd.read_csv(os.path.join(dataset_folder, "val_batched_bigger.csv"))
-test_dataset = pd.read_csv(os.path.join(dataset_folder, "test_batched_bigger.csv"))
-
-with h5py.File(os.path.join("datasets", "NWPU-Captions", "nwpu_captions_batched_bigger.h5"), "w") as hfile:
-    utils.createDatasetSplit("NWPU-Captions", hfile, "train", train_dataset, label2id_encodings=class2id)
-    del train_dataset
-    utils.createDatasetSplit("NWPU-Captions", hfile, "validation", val_dataset, label2id_encodings=class2id)
-    del val_dataset
-    utils.createDatasetSplit("NWPU-Captions", hfile, "test", test_dataset, label2id_encodings=class2id)
-    del test_dataset

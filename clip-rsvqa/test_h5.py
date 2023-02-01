@@ -5,7 +5,7 @@ import numpy as np
 import H5Datasets
 import json
 dataset_name = "NWPU-Captions"
-file_name = "nwpu_captions.h5"
+file_name = "nwpu_captions_batched.h5"
 encodings_file_name = "nwpu_captions_metadata.json"
 
 
@@ -21,7 +21,7 @@ else:
 #print("label2id:", label2id)  
 
 print("opening datasets...")
-dataset = H5Datasets.NwpuCaptionsDataset(file_name, "train", augment_images=False)
+dataset = H5Datasets.NwpuCaptionsBatchedDataset("train", augment_images=False)
 idx = random.randint(0, len(dataset))
 idx = 0
 print("number of samples:", len(dataset))
@@ -29,10 +29,8 @@ print("number of samples:", len(dataset))
 #print("num_labels:", trainDataset.num_labels)
 print("Sample:")
 print(dataset[idx])
-print("translated label:", id2class[str(dataset[idx]["class"])])
-print("Grabbing image", dataset[idx]["img_id"])
-pixel_values = dataset[idx]["pixel_values"]*255
-pixel_values = pixel_values.astype(np.uint8)
+print(f"input_ids shape {dataset[idx]['input_ids'].shape}")
+
 """patch1 = pixel_values[0]
 patch1 = np.moveaxis(patch1, 0, -1)
 patch2 = pixel_values[1]

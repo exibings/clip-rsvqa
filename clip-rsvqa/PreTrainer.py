@@ -18,7 +18,8 @@ class PreTrainer:
                 "peak learning rate": 1e-5,
                 "dataset": "NWPU-Captions",
                 "logging steps": 20,
-                "learning rate warmup fraction": 0.05
+                "learning rate warmup fraction": 0.25,
+                "pretrain": "saved-models/clip-rs"
         }
         self.run_name = f"{self.run_config['dataset']:s}:blr{self.run_config['initial learning rate']:.0e}-plr{self.run_config['peak learning rate']:.0e}-wf{int(self.run_config['learning rate warmup fraction']*100):d}-adamw"
         wandb.init(project="CLIPxRSVQA", job_type="pre-train", name=self.run_name, config=self.run_config)
@@ -26,7 +27,7 @@ class PreTrainer:
         wandb.run.name = self.run_name
         self.run_folder = os.path.join("saved-models", self.run_config["dataset"], self.run_name)
         os.makedirs(self.run_folder)
-        self.model = CLIPModel.from_pretrained("flax-community/clip-rsicd-v2")
+        self.model = CLIPModel.from_pretrained(self.run_config["pretrain"]) #use the saved clip model with expanded text-embeddings
         self.logging_steps = self.run_config["logging steps"]
         self.device = device
         self.batch_size = self.run_config["batch size"]
@@ -34,12 +35,12 @@ class PreTrainer:
         self.lr = self.run_config["initial learning rate"]
         self.optimizer = torch.optim.AdamW(self.model.parameters(), lr=self.lr, betas=(0.9, 0.98))
         self.dataset_name = self.run_config["dataset"]
-        self.train_dataset = H5Datasets.NwpuCaptionsDataset("nwpu_captions_bigger.h5", "train", augment_images=True)
-        self.train_loader = torch.utils.data.DataLoader(self.train_dataset, batch_size=self.batch_size, shuffle=False, num_workers=6, pin_memory=True)
-        self.validation_dataset = H5Datasets.NwpuCaptionsDataset("nwpu_captions_bigger.h5", "validation", augment_images=True)
-        self.validation_loader = torch.utils.data.DataLoader(self.validation_dataset, batch_size=self.batch_size, shuffle=False, num_workers=6, pin_memory=True)
-        self.test_dataset = H5Datasets.NwpuCaptionsDataset("nwpu_captions_bigger.h5", "test", augment_images=True)
+        self.train_dataset = H5Datasets.NwpuCaptionsDataset("train", augment_images=True)
+        self.train_loader = torch.utils.data.DataLoader(self.train_dataset, batch_size=self.batch_size, shuffle=True, num_workers=6, pin_memory=True)
+        self.test_dataset = H5Datasets.NwpuCaptionsDataset("test", augment_images=False)
         self.test_loader = torch.utils.data.DataLoader(self.test_dataset, batch_size=self.batch_size, shuffle=False, num_workers=6, pin_memory=True)
+        self.knn_dataset = H5Datasets.NwpuCaptionsKNN("validation") 
+        self.knn_loader = torch.utils.data.DataLoader(self.knn_dataset, batch_size=1, shuffle=False, num_workers=6, pin_memory=True)
         self.metadata = json.load(open(os.path.join("datasets", "NWPU-Captions", "nwpu_captions_metadata.json"), "r"))
         self.lr_scheduler = torch.optim.lr_scheduler.CyclicLR(self.optimizer, 
                                                             step_size_up=math.floor(self.run_config["learning rate warmup fraction"]*(len(self.train_loader))), 
@@ -56,7 +57,7 @@ class PreTrainer:
             `batch` (dict): batch to be sent to GPU.
 
         Returns:
-            A dictionary with keys: `input_ids`, `attention_mask` and `pixel_values` ready to be fed to the CLIP Model.
+            `batch` (dict): dictionary with keys `input_ids`, `attention_mask` and `pixel_values` ready to be fed to the CLIP Model.
         """
         processed_batch = {"return_loss": True}
         processed_batch["input_ids"] = batch["input_ids"].to(self.device, non_blocking=True) 
@@ -70,7 +71,6 @@ class PreTrainer:
         
         Args:
             `current_epoch` (int): epoch of the model that it is being saved.
-            `validation_losses` dict[int, float]: map of <#epoch, validation loss>.
         """
         self.checkpoint_path = os.path.join(self.run_folder, f"cp-{current_epoch:d}")
         wandb.run.summary["best model"] = self.checkpoint_path
@@ -136,7 +136,46 @@ class PreTrainer:
                 progress_bar.update(1)
         progress_bar.close()
         wandb.run.summary["test/average clip loss"] = total_loss/len(self.test_loader)
-   
+        self.testKNN()
+
+    def testKNN(self) -> None:
+        """
+        Performs a KNN evaluation (K=[1, 3, 5, 10]) for the trained model. 
+        Prompts are "An aerial image of <class>", where <class> is the image class.
+        """
+        accuracy = {
+            "k=1": 0,
+            "k=3": 0,
+            "k=5": 0,
+            "k=10": 0
+        }
+        progress_bar = tqdm(range(len(self.knn_loader)), desc="KNN Evaluation")
+        for batch in self.knn_loader:
+            model_input = {
+            "pixel_values": batch["pixel_values"].to(self.device, non_blocking=True),
+            "input_ids": torch.as_tensor(self.knn_dataset.classes_input_ids).to(self.device, non_blocking=True),
+            "attention_mask": torch.as_tensor(self.knn_dataset.classes_attention_mask).to(self.device, non_blocking=True),
+            "return_dict": True
+            }
+            outputs = self.model(**model_input)
+            logits_per_image = outputs.logits_per_image  # this is the image-text similarity score
+            probs = logits_per_image.softmax(dim=1)
+            probs = probs.detach().cpu().tolist()[0]
+            predictions = [(self.metadata["id2class"][str(idx)], probs[idx]) for idx in range(len(self.metadata["id2class"]))]
+            predictions.sort(key=lambda prediction_pair: prediction_pair[1], reverse=True)
+            knn = [1, 3, 5, 10]
+            for k in knn:
+                pred_captions_k = [prediction[0] for prediction in predictions][:k]
+                #print(k,":", pred_captions_k)
+                if self.metadata["id2class"][str(batch["class"].item())] in pred_captions_k:
+                    accuracy["k=" + str(k)] += 1
+            progress_bar.update(1)
+        progress_bar.close()
+        wandb.run.summary["knn/k=1"] = accuracy["k=1"] /len(self.knn_loader)
+        wandb.run.summary["knn/k=3"] = accuracy["k=3"] /len(self.knn_loader)
+        wandb.run.summary["knn/k=5"] = accuracy["k=5"] /len(self.knn_loader)
+        wandb.run.summary["knn/k=10"] = accuracy["k=10"] /len(self.knn_loader)
+           
     def run(self) -> None:
         """
         Run loop. Trains the model and then evaluates it.

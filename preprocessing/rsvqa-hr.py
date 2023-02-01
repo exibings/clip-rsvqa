@@ -10,20 +10,62 @@ trainDataset = pd.read_csv(os.path.join("datasets", "RSVQA-HR", "traindf.csv"), 
 validationDataset = pd.read_csv(os.path.join("datasets", "RSVQA-HR", "valdf.csv"), sep=",").drop(columns="mode").rename(columns={"answer": "label"})
 testDataset = pd.read_csv(os.path.join("datasets", "RSVQA-HR", "testdf.csv"), sep=",").drop(columns="mode").rename(columns={"answer": "label"})
 testPhiliDataset = pd.read_csv(os.path.join("datasets", "RSVQA-HR", "testdf_phili.csv"), sep=",").drop(columns="mode").rename(columns={"answer": "label"})
-
 trainDataset["label"] = trainDataset.apply(lambda x: utils.area_func(x["label"], x["category"]), axis="columns")
 trainDataset["label"] = trainDataset.apply(lambda x: utils.count_func(x["label"], x["category"]), axis="columns")
-trainDataset["zero_shot"] = trainDataset.apply(lambda x: f"{x['question']}The answer is {x['label']}", axis="columns")
 validationDataset["label"] = validationDataset.apply(lambda x: utils.area_func(x["label"], x["category"]), axis="columns")
 validationDataset["label"] = validationDataset.apply(lambda x: utils.count_func(x["label"], x["category"]), axis="columns")
-validationDataset["zero_shot"] = validationDataset.apply(lambda x: f"{x['question']}The answer is {x['label']}", axis="columns")
 testDataset["label"] = testDataset.apply(lambda x: utils.area_func(x["label"], x["category"]), axis="columns")
 testDataset["label"] = testDataset.apply(lambda x: utils.count_func(x["label"], x["category"]), axis="columns")
-testDataset["zero_shot"] = testDataset.apply(lambda x: f"{x['question']}The answer is {x['label']}", axis="columns")
 testPhiliDataset["label"] = testPhiliDataset.apply(lambda x: utils.area_func(x["label"], x["category"]), axis="columns")
 testPhiliDataset["label"] = testPhiliDataset.apply(lambda x: utils.count_func(x["label"], x["category"]), axis="columns")
-testPhiliDataset["zero_shot"] = testPhiliDataset.apply(lambda x: f"{x['question']}The answer is {x['label']}", axis="columns")
+label2id, id2label = utils.encodeDatasetLabels("RSVQA-HR", trainDataset, validationDataset, testDataset, testPhiliDataset)
 
+trainZeroDict = {"img_id": [], "prompt": [], "correct_prompt": [], "category": []}
+for _, row in trainDataset.iterrows():
+    trainZeroDict["img_id"] += [row["img_id"]]*len(label2id)
+    trainZeroDict["category"] += [row["category"]]*len(label2id)
+    for label in label2id:
+        trainZeroDict["correct_prompt"].append(1 if label == row["label"] else 0)
+        prompt = f"{row['question']} The answer is {label}"
+        trainZeroDict["prompt"].append(prompt)
+validationZeroDict = {"img_id": [], "prompt": [], "correct_prompt": [], "category": []}
+for _, row in validationDataset.iterrows():
+    validationZeroDict["img_id"] += [row["img_id"]]*len(label2id)
+    validationZeroDict["category"] += [row["category"]]*len(label2id)
+    for label in label2id:
+        validationZeroDict["correct_prompt"].append(1 if label == row["label"] else 0)
+        prompt = f"{row['question']} The answer is {label}"
+        validationZeroDict["prompt"].append(prompt)
+testZeroDict = {"img_id": [], "prompt": [], "correct_prompt": [], "category": []}
+for _, row in testDataset.iterrows():
+    testZeroDict["img_id"] += [row["img_id"]]*len(label2id)
+    testZeroDict["category"] += [row["category"]]*len(label2id)
+    for label in label2id:
+        testZeroDict["correct_prompt"].append(1 if label == row["label"] else 0)
+        prompt = f"{row['question']} The answer is {label}"
+        testZeroDict["prompt"].append(prompt)
+testPhiliZeroDict = {"img_id": [], "prompt": [], "correct_prompt": [], "category": []}
+for _, row in testDataset.iterrows():
+    testPhiliZeroDict["img_id"] += [row["img_id"]]*len(label2id)
+    testPhiliZeroDict["category"] += [row["category"]]*len(label2id)
+    for label in label2id:
+        testPhiliZeroDict["correct_prompt"].append(1 if label == row["label"] else 0)
+        prompt = f"{row['question']} The answer is {label}"
+        testPhiliZeroDict["prompt"].append(prompt)
+
+trainZeroDataset = pd.DataFrame(trainZeroDict)
+del trainZeroDict
+validationZeroDataset = pd.DataFrame(validationZeroDict)
+del validationZeroDict
+testZeroDataset = pd.DataFrame(testZeroDict)
+del testZeroDict
+testPhiliZeroDataset = pd.DataFrame(testPhiliZeroDict)
+del testPhiliZeroDict
+trainZeroDataset.to_csv("datasets/RSVQA-HR/traindf-zero.csv", index=False)
+validationZeroDataset.to_csv("datasets/RSVQA-HR/valdf-zero.csv", index=False)
+testZeroDataset.to_csv("datasets/RSVQA-HR/testdf-zero.csv", index=False)
+testPhiliZeroDataset.to_csv("datasets/RSVQA-HR/testdf_phili-zero.csv", index=False)
+exit()
 trainDataset['question_length'] = trainDataset.question.apply(len)
 validationDataset['question_length'] = validationDataset.question.apply(len)
 testDataset['question_length'] = testDataset.question.apply(len)
@@ -45,29 +87,25 @@ testPhiliDataset["question_length"].hist(ax=axes[3], bins=len(testPhiliDataset.q
 fig.suptitle("RSVQA-HR Question Length")
 fig.savefig(os.path.join("datasets", "RSVQA-HR", "question_length_distribution.png"))
 
-trainDataset['zero_shot_length'] = trainDataset.zero_shot.apply(len)
-validationDataset['zero_shot_length'] = validationDataset.zero_shot.apply(len)
-testDataset['zero_shot_length'] = testDataset.zero_shot.apply(len)
-testPhiliDataset['zero_shot_length'] = testPhiliDataset.zero_shot.apply(len)
-print("train zero shot prompt max length:", trainDataset.zero_shot_length.max())
-print("validation zero shot prompt max length:", validationDataset.zero_shot_length.max())
-print("test zero shot prompt max length:", testDataset.zero_shot_length.max())
-print("test phili zero shot prompt max length:", testPhiliDataset.zero_shot_length.max())
+trainZeroDataset['prompt_length'] = trainZeroDataset.prompt.apply(len)
+validationZeroDataset['prompt_length'] = validationZeroDataset.prompt.apply(len)
+testZeroDataset['prompt_length'] = testZeroDataset.prompt.apply(len)
+testPhiliZeroDataset['prompt_length'] = testPhiliZeroDataset.prompt.apply(len)
+print("train zero shot prompt max length :", trainZeroDataset.prompt_length.max())
+print("validation zero shot prompt max length :", validationZeroDataset.prompt_length.max())
+print("test zero shot prompt max length :", testZeroDataset.prompt_length.max())
+print("test phili zero shot prompt max length :", testPhiliZeroDataset.prompt_length.max())
 
-
-fig, axes = plt.subplots(1, 4, figsize=(20, 4))
-trainDataset["zero_shot_length"].hist(ax=axes[0], bins=len(trainDataset.zero_shot_length.unique())).set_title(
+fig, axes = plt.subplots(1, 3, figsize=(20, 4))
+trainZeroDataset["prompt_length"].hist(ax=axes[0], bins=len(trainZeroDataset.prompt_length.unique())).set_title(
     "Train")
-validationDataset["zero_shot_length"].hist(ax=axes[1], bins=len(validationDataset.zero_shot_length.unique())).set_title(
+validationZeroDataset["prompt_length"].hist(ax=axes[1], bins=len(validationZeroDataset.prompt_length.unique())).set_title(
     "Validation")
-testDataset["zero_shot_length"].hist(ax=axes[2], bins=len(testDataset.zero_shot_length.unique())).set_title(
+testZeroDataset["prompt_length"].hist(ax=axes[2], bins=len(testZeroDataset.prompt_length.unique())).set_title(
     "Test")
-testPhiliDataset["zero_shot_length"].hist(ax=axes[3], bins=len(testPhiliDataset.zero_shot_length.unique())).set_title(
-    "Test Philadelphia")
-fig.suptitle("RSVQA-HR Question Length")
-fig.savefig(os.path.join("datasets", "RSVQA-HR", "zero_shot_length_distribution.png"))
+testPhiliZeroDataset["prompt_length"].hist(ax=axes[2], bins=len(testPhiliZeroDataset.prompt_length.unique())).set_title(
+    "Test")
 
-label2id, id2label = utils.encodeDatasetLabels("RSVQA-HR", trainDataset, validationDataset, testDataset, testPhiliDataset)
 trainDataset.replace(label2id, inplace=True)
 validationDataset.replace(label2id, inplace=True)
 testDataset.replace(label2id, inplace=True)
@@ -90,6 +128,7 @@ for key in num_labels:
 metadata = {"label2id": label2id, "id2label": id2label, "num_labels": num_labels}
 with open(os.path.join("datasets", "RSVQA-HR", "rsvqa_hr_metadata.json"), "w") as metadata_file:
     json.dump(metadata, metadata_file)
+
 
 image_count = utils.jpgOnly("RSVQA-HR")
 if utils.verifyImages("RSVQA-HR"):

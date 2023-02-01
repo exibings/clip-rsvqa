@@ -1,12 +1,11 @@
 import os
 from PIL import Image
 import pandas as pd
-from transformers import CLIPFeatureExtractor, CLIPTokenizer
+from transformers import CLIPTokenizer, CLIPFeatureExtractor
 import h5py
 import numpy as np
 from tqdm.auto import tqdm
 
-tokenizer = CLIPTokenizer.from_pretrained("flax-community/clip-rsicd-v2")
 feature_extractor = CLIPFeatureExtractor.from_pretrained("flax-community/clip-rsicd-v2")
 
 def jpgOnly(dataset_name: str) -> int:
@@ -89,7 +88,7 @@ def encodeDatasetLabels(dataset_name: str, trainDataset: pd.DataFrame = None, va
         count += 1
     return label2id, id2label
 
-def createDatasetSplit(dataset_name, hfile, split, processed_dataframe, label2id_encodings = None):
+def createDatasetSplit(dataset_name, hfile, split, processed_dataframe, label2id_encodings = None, tokenizer = CLIPTokenizer.from_pretrained("flax-community/clip-rsicd-v2")):
     print("Creating", split, "split")
     hfile.create_group(split)
     # tokenize dataset
@@ -100,10 +99,10 @@ def createDatasetSplit(dataset_name, hfile, split, processed_dataframe, label2id
     print("\tTokenizing text...")
     if dataset_name in ("RSVQA-LR", "RSVQA-HR", "RSVQAxBEN"):
         processed_dataframe["input_ids"], processed_dataframe["attention_mask"] = processed_dataframe.apply(
-            tokenizeText, args=(max_text_length, "question"), result_type="expand", axis="columns").T.values
+            tokenizeText, args=(max_text_length, "question", tokenizer), result_type="expand", axis="columns").T.values
     elif dataset_name == "NWPU-Captions":
         processed_dataframe["input_ids"], processed_dataframe["attention_mask"] = processed_dataframe.apply(
-            tokenizeText, args=(max_text_length, "caption"), result_type="expand", axis="columns").T.values
+            tokenizeText, args=(max_text_length, "caption", tokenizer), result_type="expand", axis="columns").T.values
     # /tokenize dataset
     if dataset_name in ("RSVQA-LR", "RSVQA-HR"):
         hfile[split].create_dataset("img_id", data=processed_dataframe["img_id"])
@@ -147,7 +146,7 @@ def createDatasetSplit(dataset_name, hfile, split, processed_dataframe, label2id
         progress_bar.update(1)
     progress_bar.close()
 
-def tokenizeText(x, max_text_length, column):
+def tokenizeText(x, max_text_length, column, tokenizer):
     tokenized = tokenizer(x[column], padding="max_length", max_length=max_text_length, return_tensors="np")
     return tokenized["input_ids"], tokenized["attention_mask"]
 

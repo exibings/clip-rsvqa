@@ -189,10 +189,10 @@ class Patching(CLIPModel):
 
 
 class CLIPRS(CLIPModel):
-    def __init__(self, max_seq_length: int, initial_pretrain_path: str):
-        clip_model = CLIPModel.from_pretrained(initial_pretrain_path)
+    def __init__(self, max_seq_length: int):
+        clip_model = CLIPModel.from_pretrained("flax-community/clip-rsicd-v2")
         super().__init__(clip_model.config)
-        processor = CLIPProcessor.from_pretrained(initial_pretrain_path)
+        processor = CLIPProcessor.from_pretrained("flax-community/clip-rsicd-v2")
         processor.tokenizer.model_max_length = max_seq_length
         processor.tokenizer.init_kwargs['model_max_length'] = max_seq_length
         processor.tokenizer.name_or_path = "saved-models/clip-rs"
