@@ -1,0 +1,10 @@
+{
+   "batch_size": 45,
+   "limit_epochs": 1,
+   "initial_learning_rate": 1e-8,
+   "peak_learning_rate": 1e-5,
+   "dataset": "NWPU-Captions",
+   "logging_steps": 20,
+   "learning_rate_warmup_fraction": 0.25,
+   "pretrain": "flax-community/clip-rsicd-v2"
+}

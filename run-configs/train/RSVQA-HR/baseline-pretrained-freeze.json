@@ -1,0 +1,11 @@
+{
+   "limit_epochs": 100,
+   "dataset_name": "RSVQA-HR",
+   "batch_size": 64,
+   "patience": 10,
+   "lr_patience": 5,
+   "freeze": 1,
+   "model_type": "baseline",
+   "pretrained": "saved-models/NWPU-Captions/1dg75p0u-NWPU-Captions:blr1e-08-plr1e-05-wf25-adamw/cp-1",
+   "max_seq_length": 77
+}

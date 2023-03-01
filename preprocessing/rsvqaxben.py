@@ -50,7 +50,7 @@ fig.savefig(os.path.join("datasets", "RSVQAxBEN", "zero_shot_length_distribution
 
 label2id, id2label = utils.encodeDatasetLabels("RSVQAxBEN", trainDataset, validationDataset, testDataset)
 num_labels = {}
-merged_df = pd.concat([trainDataset, validationDataset, testDataset])
+merged_df = pd.concat([trainDataset, validationDataset, testDataset], ignore_index=True)
 for category, label in zip(merged_df["category"], merged_df["label"]):
     try: 
         num_labels[category].add(label)

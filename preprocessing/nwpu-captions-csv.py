@@ -1,10 +1,9 @@
 import os
 import json
 import pandas as pd
-import h5py
 import utils
 import spacy
-
+from itertools import combinations
 
 nlp = spacy.load('en_core_web_md')
 included_tags = {"NOUN", "ADJ", "NUM"}
@@ -87,8 +86,60 @@ with open(os.path.join("datasets", "NWPU-Captions", "dataset_nwpu.json"), "r") a
     trainDataset = pd.DataFrame.from_dict(trainDataset)
     valDataset = pd.DataFrame.from_dict(valDataset)
     testDataset = pd.DataFrame.from_dict(testDataset)
-    
+    trainDataset.to_csv(os.path.join("datasets", "NWPU-Captions", "traindf.csv"))
+    valDataset.to_csv(os.path.join("datasets", "NWPU-Captions", "valdf.csv"))
+    testDataset.to_csv(os.path.join("datasets", "NWPU-Captions", "testdf.csv"))
     class2id, id2class = utils.encodeDatasetLabels("NWPU-Captions", trainDataset=trainDataset, validationDataset=valDataset, testDataset=testDataset)
     encodings = {"class2id": class2id, "id2class": id2class}
+
+    merged_df = pd.concat([trainDataset, valDataset, testDataset], ignore_index=True)
+    class2id = json.load(open(os.path.join("datasets", "NWPU-Captions", "nwpu_captions_metadata.json"), "r"))["class2id"]
+
+    sentid_counter = merged_df["sentid"].max() + 1
+    extended_captions = {"image": [], "class": [], "caption": [], "filtered_caption": [], "sentid": [], "class_caption": [], "img_id": []}
+    for image in trainDataset["image"].unique():
+        filtered_df = trainDataset[trainDataset["image"] == image]
+        for i0, i1 in combinations(range(3), 2):
+            extended_captions["image"].append(image)
+            extended_captions["img_id"].append(filtered_df.iloc[i0]["img_id"])
+            extended_captions["class"].append(filtered_df.iloc[i0]["class"])
+            extended_captions["class_caption"].append(filtered_df.iloc[i0]["class_caption"])
+            extended_captions["caption"].append(f"{filtered_df.iloc[i0]['caption']} {filtered_df.iloc[i1]['caption']}")
+            extended_captions["filtered_caption"].append(f"{filtered_df.iloc[i0]['filtered_caption']} {filtered_df.iloc[i1]['filtered_caption']}")
+            extended_captions["sentid"].append(sentid_counter)
+            sentid_counter += 1
+    trainDataset = pd.concat([trainDataset, pd.DataFrame().from_dict(extended_captions)], ignore_index=True)
+    
+    extended_captions = {"image": [], "class": [], "caption": [], "filtered_caption": [], "sentid": [], "class_caption": [], "img_id": []}
+    for image in valDataset["image"].unique():
+        filtered_df = valDataset[valDataset["image"] == image]
+        for i0, i1 in combinations(range(3), 2):
+            extended_captions["image"].append(image)
+            extended_captions["img_id"].append(filtered_df.iloc[i0]["img_id"])
+            extended_captions["class"].append(filtered_df.iloc[i0]["class"])
+            extended_captions["class_caption"].append(filtered_df.iloc[i0]["class_caption"])
+            extended_captions["caption"].append(f"{filtered_df.iloc[i0]['caption']} {filtered_df.iloc[i1]['caption']}")
+            extended_captions["filtered_caption"].append(f"{filtered_df.iloc[i0]['filtered_caption']} {filtered_df.iloc[i1]['filtered_caption']}")
+            extended_captions["sentid"].append(sentid_counter)
+            sentid_counter += 1
+    valDataset = pd.concat([valDataset, pd.DataFrame().from_dict(extended_captions)], ignore_index=True)
+
+    extended_captions = {"image": [], "class": [], "caption": [], "filtered_caption": [], "sentid": [], "class_caption": [], "img_id": []}
+    for image in testDataset["image"].unique():
+        filtered_df = testDataset[testDataset["image"] == image]
+        for i0, i1 in combinations(range(3), 2):
+            extended_captions["image"].append(image)
+            extended_captions["img_id"].append(filtered_df.iloc[i0]["img_id"])
+            extended_captions["class"].append(filtered_df.iloc[i0]["class"])
+            extended_captions["class_caption"].append(filtered_df.iloc[i0]["class_caption"])
+            extended_captions["caption"].append(f"{filtered_df.iloc[i0]['caption']} {filtered_df.iloc[i1]['caption']}")
+            extended_captions["filtered_caption"].append(f"{filtered_df.iloc[i0]['filtered_caption']} {filtered_df.iloc[i1]['filtered_caption']}")
+            extended_captions["sentid"].append(sentid_counter)
+            sentid_counter += 1
+    testDataset = pd.concat([testDataset, pd.DataFrame().from_dict(extended_captions)], ignore_index=True)
+
+    trainDataset.to_csv(os.path.join("datasets", "NWPU-Captions", "traindf-extended-captions.csv"))
+    valDataset.to_csv(os.path.join("datasets", "NWPU-Captions", "valdf-extended-captions.csv"))
+    testDataset.to_csv(os.path.join("datasets", "NWPU-Captions", "testdf-extended-captions.csv"))
     with open(os.path.join("datasets", "NWPU-Captions", "nwpu_captions_metadata.json"), "w") as metadata_file:
         json.dump(encodings, metadata_file)

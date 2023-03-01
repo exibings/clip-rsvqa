@@ -5,6 +5,7 @@ from PIL import Image
 import pandas as pd
 import json
 import matplotlib.pyplot as plt
+from transformers import CLIPTokenizer
 
 trainDataset = pd.read_csv(os.path.join("datasets", "RSVQA-HR", "traindf.csv"), sep=",").drop(columns="mode").rename(columns={"answer": "label"})
 validationDataset = pd.read_csv(os.path.join("datasets", "RSVQA-HR", "valdf.csv"), sep=",").drop(columns="mode").rename(columns={"answer": "label"})
@@ -65,7 +66,6 @@ trainZeroDataset.to_csv("datasets/RSVQA-HR/traindf-zero.csv", index=False)
 validationZeroDataset.to_csv("datasets/RSVQA-HR/valdf-zero.csv", index=False)
 testZeroDataset.to_csv("datasets/RSVQA-HR/testdf-zero.csv", index=False)
 testPhiliZeroDataset.to_csv("datasets/RSVQA-HR/testdf_phili-zero.csv", index=False)
-exit()
 trainDataset['question_length'] = trainDataset.question.apply(len)
 validationDataset['question_length'] = validationDataset.question.apply(len)
 testDataset['question_length'] = testDataset.question.apply(len)
@@ -129,18 +129,31 @@ metadata = {"label2id": label2id, "id2label": id2label, "num_labels": num_labels
 with open(os.path.join("datasets", "RSVQA-HR", "rsvqa_hr_metadata.json"), "w") as metadata_file:
     json.dump(metadata, metadata_file)
 
-
 image_count = utils.jpgOnly("RSVQA-HR")
 if utils.verifyImages("RSVQA-HR"):
     # create .h5 file
     with h5py.File(os.path.join("datasets", "RSVQA-HR", "rsvqa_hr.h5"), "w") as hfile:
         utils.createDatasetSplit("RSVQA-HR", hfile, "train", trainDataset)
-        del trainDataset
         utils.createDatasetSplit("RSVQA-HR", hfile, "validation", validationDataset)
-        del validationDataset
         utils.createDatasetSplit("RSVQA-HR", hfile, "test", testDataset)
-        del testDataset
         utils.createDatasetSplit("RSVQA-HR", hfile, "test_phili", testPhiliDataset)
+        print("Processing images and adding them to the dataset...")
+        pixel_values = hfile.create_dataset("pixel_values", (image_count, 5, 3, 224, 224), "float32")
+        images = os.listdir(os.path.join("datasets", "RSVQA-HR", "images"))
+        for image_idx in range(len(images)):
+            image = utils.feature_extractor(utils.patchImage(os.path.join("datasets", "RSVQA-HR", "images",
+                                                                    images[image_idx])), return_tensors="np", resample=Image.Resampling.BILINEAR)
+            pixel_values[int(images[image_idx].split(".")[0])] = image.pixel_values
+    # create .h5 file
+    with h5py.File(os.path.join("datasets", "RSVQA-HR", "rsvqa_hr_extended.h5"), "w") as hfile:
+        tokenizer = CLIPTokenizer.from_pretrained("saved-models/clip-rscid-v2-extended")
+        utils.createDatasetSplit("RSVQA-HR", hfile, "train", trainDataset, tokenizer=tokenizer)
+        del trainDataset
+        utils.createDatasetSplit("RSVQA-HR", hfile, "validation", validationDataset, tokenizer=tokenizer)
+        del validationDataset
+        utils.createDatasetSplit("RSVQA-HR", hfile, "test", testDataset,tokenizer=tokenizer)
+        del testDataset
+        utils.createDatasetSplit("RSVQA-HR", hfile, "test_phili", testPhiliDataset, tokenizer=tokenizer)
         del testPhiliDataset
         print("Processing images and adding them to the dataset...")
         pixel_values = hfile.create_dataset("pixel_values", (image_count, 5, 3, 224, 224), "float32")

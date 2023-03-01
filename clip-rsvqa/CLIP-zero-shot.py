@@ -16,8 +16,7 @@ model.to(device)
 #validation_dataset = H5Datasets.RsvqaZeroDataset("RSVQA-LR", "validation")
 #validation_loader = torch.utils.data.DataLoader(validation_dataset, batch_size=1, shuffle=False, num_workers=4, pin_memory=True)
 test_dataset = H5Datasets.RsvqaZeroDataset("RSVQA-LR", "test")
-test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=5, shuffle=False, num_workers=4, pin_memory=True)
-
+test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=test_dataset.num_labels["total"], shuffle=False, num_workers=4, pin_memory=True)
 
 metrics = {"overall": {"accuracy": evaluate.load("accuracy")}}
 for question_type in test_dataset.categories:

@@ -11,3 +11,5 @@ saved-models/RSVQA-LR/*
 saved-models/RSVQAxBEN/*
 saved-models/NWPU-Captions/*
 saved-models/clip-rs/*
+saved-models/NWPU-Extended-Captions/*
+saved-models/clip-rscid-v2-extended/*

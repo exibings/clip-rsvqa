@@ -188,15 +188,15 @@ class Patching(CLIPModel):
             param.requires_grad = False
 
 
-class CLIPRS(CLIPModel):
+class CLIPExtended(CLIPModel):
     def __init__(self, max_seq_length: int):
         clip_model = CLIPModel.from_pretrained("flax-community/clip-rsicd-v2")
         super().__init__(clip_model.config)
         processor = CLIPProcessor.from_pretrained("flax-community/clip-rsicd-v2")
         processor.tokenizer.model_max_length = max_seq_length
         processor.tokenizer.init_kwargs['model_max_length'] = max_seq_length
-        processor.tokenizer.name_or_path = "saved-models/clip-rs"
-        processor.tokenizer.init_kwargs['name_or_path'] = "saved-models/clip-rs"
+        processor.tokenizer.name_or_path = "saved-models/clip-rscid-v2-extended"
+        processor.tokenizer.init_kwargs['name_or_path'] = "saved-models/clip-rscid-v2-extended"
         
         current_max_pos, embed_size = clip_model.text_model.embeddings.position_embedding.weight.shape
         assert max_seq_length > current_max_pos
@@ -222,9 +222,9 @@ class CLIPRS(CLIPModel):
         clip_model.text_model.embeddings.position_embedding.weight.data = new_pos_embed
         clip_model.text_model.embeddings.position_ids.data = torch.tensor([i for i in range(max_seq_length)]).reshape(1, max_seq_length)
 
-        clip_model.config.update({"_name_or_path": "saved-models/clip-rs"})
+        clip_model.config.update({"_name_or_path": "saved-models/clip-rscid-v2-extended"})
         clip_model.text_model.config.update({"max_position_embeddings": max_seq_length})
         clip_model.config.update({"text_config_dict": clip_model.text_model.config.to_diff_dict()})
         clip_model.config.update({"vision_config_dict": clip_model.vision_model.config.to_diff_dict()})
-        clip_model.save_pretrained("saved-models/clip-rs")
-        processor.save_pretrained("saved-models/clip-rs")
+        clip_model.save_pretrained("saved-models/clip-rscid-v2-extended")
+        processor.save_pretrained("saved-models/clip-rscid-v2-extended")

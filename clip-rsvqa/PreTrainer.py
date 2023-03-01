@@ -10,17 +10,18 @@ import math
 
 
 class PreTrainer:
-    def __init__(self, device: torch.device):
+    def __init__(self, batch_size: int, limit_epochs: int, dataset: str, logging_steps: int, pretrain: str, initial_learning_rate: float, peak_learning_rate: float, device: torch.device, learning_rate_warmup_fraction: float):
         self.run_config = {
-                "batch size": 90, # n_classes * 2
-                "limit epochs": 1,
-                "initial learning rate": 1e-8,
-                "peak learning rate": 1e-5,
-                "dataset": "NWPU-Captions",
-                "logging steps": 20,
-                "learning rate warmup fraction": 0.25,
-                "pretrain": "saved-models/clip-rs"
-        }
+            "batch size": batch_size,
+            "limit epochs": limit_epochs,
+            "initial learning rate": initial_learning_rate,
+            "peak learning rate": peak_learning_rate,
+            "dataset": dataset,
+            "logging steps": logging_steps,
+            "learning rate warmup fraction": learning_rate_warmup_fraction,
+            "pretrain": pretrain,
+            "max. sequence length": 248 if pretrain == "saved-models/clip-rscid-v2-extended" else 77
+            }
         self.run_name = f"{self.run_config['dataset']:s}:blr{self.run_config['initial learning rate']:.0e}-plr{self.run_config['peak learning rate']:.0e}-wf{int(self.run_config['learning rate warmup fraction']*100):d}-adamw"
         wandb.init(project="CLIPxRSVQA", job_type="pre-train", name=self.run_name, config=self.run_config)
         self.run_name = f"{wandb.run.id:s}-{self.run_name:s}"
@@ -35,9 +36,16 @@ class PreTrainer:
         self.lr = self.run_config["initial learning rate"]
         self.optimizer = torch.optim.AdamW(self.model.parameters(), lr=self.lr, betas=(0.9, 0.98))
         self.dataset_name = self.run_config["dataset"]
-        self.train_dataset = H5Datasets.NwpuCaptionsDataset("train", augment_images=True)
+        if self.run_config["pretrain"] == "saved-models/clip-rscid-v2-extended":
+            dataset_file_name = "nwpu_captions_extended.h5"
+        elif self.run_config["pretrain"] == "flax-community/clip-rsicd-v2":
+            dataset_file_name = "nwpu_captions.h5"
+        else:
+            print("Not a valid CLIP pretrained model.")
+            exit()
+        self.train_dataset = H5Datasets.NwpuCaptionsDataset(dataset_file_name, "train", augment_images=True)
         self.train_loader = torch.utils.data.DataLoader(self.train_dataset, batch_size=self.batch_size, shuffle=True, num_workers=6, pin_memory=True)
-        self.test_dataset = H5Datasets.NwpuCaptionsDataset("test", augment_images=False)
+        self.test_dataset = H5Datasets.NwpuCaptionsDataset(dataset_file_name, "test", augment_images=False)
         self.test_loader = torch.utils.data.DataLoader(self.test_dataset, batch_size=self.batch_size, shuffle=False, num_workers=6, pin_memory=True)
         self.knn_dataset = H5Datasets.NwpuCaptionsKNN("validation") 
         self.knn_loader = torch.utils.data.DataLoader(self.knn_dataset, batch_size=1, shuffle=False, num_workers=6, pin_memory=True)
@@ -171,11 +179,12 @@ class PreTrainer:
                     accuracy["k=" + str(k)] += 1
             progress_bar.update(1)
         progress_bar.close()
-        wandb.run.summary["knn/k=1"] = accuracy["k=1"] /len(self.knn_loader)
-        wandb.run.summary["knn/k=3"] = accuracy["k=3"] /len(self.knn_loader)
-        wandb.run.summary["knn/k=5"] = accuracy["k=5"] /len(self.knn_loader)
-        wandb.run.summary["knn/k=10"] = accuracy["k=10"] /len(self.knn_loader)
-           
+        wandb.run.summary["knn/k=1"] = accuracy["k=1"] / len(self.knn_loader)
+        wandb.run.summary["knn/k=3"] = accuracy["k=3"] / len(self.knn_loader)
+        wandb.run.summary["knn/k=5"] = accuracy["k=5"] / len(self.knn_loader)
+        wandb.run.summary["knn/k=10"] = accuracy["k=10"] / len(self.knn_loader)
+        wandb.run.summary["knn/average"] = (wandb.run.summary["knn/k=1"] + wandb.run.summary["knn/k=3"] + wandb.run.summary["knn/k=5"] + wandb.run.summary["knn/k=10"]) / len(accuracy)
+
     def run(self) -> None:
         """
         Run loop. Trains the model and then evaluates it.

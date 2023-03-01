@@ -1,0 +1,11 @@
+{
+   "limit_epochs": 100,
+   "dataset_name": "RSVQA-HR",
+   "batch_size": 64,
+   "patience": 10,
+   "lr_patience": 5,
+   "freeze": 0,
+   "model_type": "baseline",
+   "pretrained": "flax-community/clip-rsicd-v2",
+   "max_seq_length": 77
+}

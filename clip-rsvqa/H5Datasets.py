@@ -7,14 +7,10 @@ import utils
 import json
 
 class RsvqaDataset(torch.utils.data.Dataset):
-    def __init__(self, dataset_name, split, model_type):
+    def __init__(self, dataset_name, dataset_file_name, metadata_file_name, split, model_type):
         self.folder = os.path.join("datasets", dataset_name)
-        if dataset_name == "RSVQA-LR":
-            self.h5_file_name = "rsvqa_lr.h5"
-            self.metadata_file_name = "rsvqa_lr_metadata.json"
-        elif dataset_name == "RSVQA-HR":
-            self.h5_file_name = "rsvqa_hr.h5"
-            self.metadata_file_name = "rsvqa_hr_metadata.json"
+        self.h5_file_name = dataset_file_name
+        self.metadata_file_name = metadata_file_name
         self.h5_file_path = os.path.join(self.folder, self.h5_file_name)
         self.metadata_file_path = os.path.join(self.folder, self.metadata_file_name)
         self.dataset = None
@@ -56,6 +52,7 @@ class RsvqaZeroDataset(torch.utils.data.Dataset):
             self.metadata_file_name = "rsvqa_hr_metadata.json"
         self.h5_file_path = os.path.join(self.folder, self.h5_file_name)
         self.metadata_file_path = os.path.join(self.folder, self.metadata_file_name)
+        self.num_labels = json.load(open(self.metadata_file_path, "r"))["num_labels"]
         self.dataset = None
         self.split = split
         with h5py.File(os.path.join(self.folder, self.h5_file_name), 'r') as file:
@@ -87,22 +84,22 @@ class RsvqaZeroDataset(torch.utils.data.Dataset):
         return self.num_prompts
 
 class RsvqaBenDataset(torch.utils.data.Dataset):
-    def __init__(self, split, model_type):
+    def __init__(self, dataset_file_name, metadata_file_name, split, model_type):
         self.folder = os.path.join("datasets", "RSVQAxBEN")
         self.dataset = None
         self.split = split
         self.model_type = model_type
         self.image_processing = utils.ImageProcessing(augment_images=False)      
-        self.h5_file_name = "rsvqaxben.h5"
+        self.h5_file_name = dataset_file_name
         self.h5_file_path = os.path.join(self.folder, self.h5_file_name)
-        self.metadata_file_name = "rsvqaxben_metadata.json"
+        self.metadata_file_name = metadata_file_name
         self.metadata_file_path = os.path.join(self.folder, self.metadata_file_name)
+        self.num_labels = json.load(open(self.metadata_file_path, "r"))["num_labels"]
         with h5py.File(os.path.join(self.folder, self.h5_file_name), 'r') as file:
             assert len(file[self.split]["img_id"]) == len(file[self.split]["category"]) == len(file[self.split]["label"]) == len(file[self.split]["attention_mask"]) == len(file[self.split]["input_ids"]), "non matching number of entries in .h5 file."
             self.num_images = len(file[self.split]["img_id"])
             self.categories = [category.decode("utf-8") for category in np.unique(file[self.split]["category"])]
             self.num_images = len(np.unique(file[self.split]["img_id"]))
-            self.num_labels = json.load(open(self.metadata_file_path, "r"))["num_labels"]
     
     def __getitem__(self, idx):
         if self.dataset is None:
@@ -123,13 +120,13 @@ class RsvqaBenDataset(torch.utils.data.Dataset):
         return self.num_images
 
 class NwpuCaptionsDataset(torch.utils.data.Dataset):
-    def __init__(self, split, augment_images = False):
+    def __init__(self, dataset_file_name, split, augment_images = False):
         self.folder = os.path.join("datasets", "NWPU-Captions")
         self.dataset = None
         self.split = split
         self.augment_images = augment_images
         self.image_processing = utils.ImageProcessing(augment_images)
-        self.h5_file_name = "nwpu_captions.h5"
+        self.h5_file_name = dataset_file_name
         self.h5_file_path = os.path.join(self.folder,  self.h5_file_name)
         with h5py.File(os.path.join(self.folder, self.h5_file_name), 'r') as file:
             assert len(file[self.split]["img_id"]) == len(file[self.split]["image"]) == len(file[self.split]["class"]) == len(file[self.split]["caption"]) == len(file[self.split]["filtered_caption"]) == len(
@@ -160,13 +157,13 @@ class NwpuCaptionsDataset(torch.utils.data.Dataset):
         return self.num_captions
 
 class NwpuCaptionsBatchedDataset(torch.utils.data.Dataset):
-    def __init__(self, split, augment_images = False):
+    def __init__(self, file_name, split, augment_images = False):
         self.folder = os.path.join("datasets", "NWPU-Captions", "batched")
         self.dataset = None
         self.split = split
         self.augment_images = augment_images
         self.image_processing = utils.ImageProcessing(augment_images)
-        self.h5_file_name = "nwpu_captions_batched.h5"
+        self.h5_file_name = file_name
         self.h5_file_path = os.path.join(self.folder,  self.h5_file_name)
         with h5py.File(os.path.join(self.folder, self.h5_file_name), 'r') as file:
             assert len(file[self.split]["img_id"]) == len(file[self.split]["image"]) == len(file[self.split]["class"]) == len(file[self.split]["caption"]) == len(file[self.split]["filtered_caption"]) == len(
